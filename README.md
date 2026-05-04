@@ -1,4 +1,4 @@
-# BlockCert
+# CertChain
 ### FAMU FCSS Blockchain Micro-Credentialing System
 
 [![CI/CD](https://github.com/YOUR_USERNAME/blockcert/actions/workflows/blockcert.yml/badge.svg)](https://github.com/YOUR_USERNAME/blockcert/actions)
@@ -41,7 +41,7 @@
 
 ## Overview
 
-BlockCert is a graduate thesis project developed at **Florida A&M University** for the
+CertChain is a graduate thesis project developed at **Florida A&M University** for the
 **Forensic Computer Science and Security (FCSS)** certificate program. The system automates
 the micro-credential issuance process — a process that currently requires manual administrative
 review — by combining natural language processing, a weighted eligibility scoring algorithm,
