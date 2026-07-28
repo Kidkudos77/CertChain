@@ -10,7 +10,7 @@ metadata:
   labels:
     app: certchain
     institution: famu
-    program: fcss
+    program: fccs
 ---
 # ── ConfigMap — shared environment variables ──────────────────────────────────
 apiVersion: v1

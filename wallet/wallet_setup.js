@@ -54,7 +54,7 @@ async function registerUser({ userID, role, affiliation='org1.department1' }) {
         affiliation, enrollmentID:userID, role:'client',
         attrs:[
             { name:'role',    value:role,        ecert:true },
-            { name:'program', value:'FAMU-FCSS',  ecert:true },
+            { name:'program', value:'FAMU-FCCS',  ecert:true },
         ],
     }, adminUser);
     const enroll = await ca.enroll({

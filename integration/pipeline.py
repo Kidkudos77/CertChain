@@ -1,5 +1,5 @@
 """
-BlockCert — Integration Pipeline (Final Version)
+CertChain — Integration Pipeline (Final Version)
 ==================================================
 Ties all confirmed layers together:
 
@@ -27,11 +27,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from nlp.transcript_parser import TranscriptParser
 
-log = logging.getLogger('BlockCert')
+log = logging.getLogger('CertChain')
 logging.basicConfig(level=logging.INFO, format='%(levelname)s | %(message)s')
 
-API_BASE   = os.getenv('BLOCKCERT_API',    'http://localhost:3000')
-CALLER_ID  = os.getenv('BLOCKCERT_CALLER', 'famu-institution')
+API_BASE   = os.getenv('CERTCHAIN_API',    'http://localhost:3000')
+CALLER_ID  = os.getenv('CERTCHAIN_CALLER', 'famu-institution')
 BERT_MODEL = os.getenv('BERT_MODEL_DIR',   'nlp/model')
 MIN_CONF   = 0.60
 

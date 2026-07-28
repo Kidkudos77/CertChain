@@ -1,4 +1,4 @@
-name: BlockCert CI/CD
+name: CertChain CI/CD
 
 on:
   push:
@@ -53,7 +53,7 @@ jobs:
         run: cd chaincode && npm install
 
       - name: Lint chaincode
-        run: cd chaincode && npx eslint blockcert.js --no-eslintrc --rule '{"no-unused-vars":"warn"}' || true
+        run: cd chaincode && npx eslint certchain.js --no-eslintrc --rule '{"no-unused-vars":"warn"}' || true
 
       - name: Install API dependencies
         run: cd api && npm install
@@ -78,17 +78,17 @@ jobs:
           echo "${{ secrets.NRP_KUBECONFIG }}" > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
-      - name: Deploy BlockCert API to NRP
+      - name: Deploy CertChain API to NRP
         run: |
-          kubectl apply -f k8s/configmap.yaml       -n blockcert
-          kubectl apply -f k8s/fabric-network.yaml  -n blockcert
-          kubectl apply -f k8s/api-deployment.yaml  -n blockcert
-          kubectl apply -f k8s/ipfs-deployment.yaml -n blockcert
+          kubectl apply -f k8s/configmap.yaml       -n certchain
+          kubectl apply -f k8s/fabric-network.yaml  -n certchain
+          kubectl apply -f k8s/api-deployment.yaml  -n certchain
+          kubectl apply -f k8s/ipfs-deployment.yaml -n certchain
 
       - name: Wait for rollout
-        run: kubectl rollout status deployment/blockcert-api -n blockcert --timeout=120s
+        run: kubectl rollout status deployment/certchain-api -n certchain --timeout=120s
 
       - name: Verify deployment
         run: |
-          kubectl get pods -n blockcert
-          kubectl get services -n blockcert
+          kubectl get pods -n certchain
+          kubectl get services -n certchain

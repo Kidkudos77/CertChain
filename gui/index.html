@@ -952,7 +952,7 @@ function setText(el, str) {
       </div>
       <div class="fg">
         <label class="fl" for="r-reason">Reason for Access <span class="td">(optional)</span></label>
-        <textarea id="r-reason" placeholder="e.g. FCSS student tracking certificate progress..."></textarea>
+        <textarea id="r-reason" placeholder="e.g. FCCS student tracking certificate progress..."></textarea>
       </div>
       <span class="field-err" id="reg-err" role="alert" style="display:block;margin-bottom:10px"></span>
       <button class="btn btn-primary btn-full" onclick="doRegister()">Submit Registration Request</button>
@@ -1278,7 +1278,7 @@ function stuStatus(){ return `
     <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:10px 13px;font-family:'IBM Plex Mono',monospace;font-size:0.8125rem;margin-bottom:12px;overflow-x:auto">Score = 0.40×(GPA/4.0) + 0.40×(courses/5) + 0.20×BERT</div>
     <div style="display:flex;flex-direction:column;gap:7px">
       <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:9px;border:1px solid var(--border)"><div class="fs13 fw5 tm">Your GPA: 3.75</div><div class="mono fs13" style="margin-top:2px">3.75 / 4.0 → 0.34 pts</div></div>
-      <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:9px;border:1px solid var(--border)"><div class="fs13 fw5 tm">Courses Completed: 3</div><div class="mono fs13" style="margin-top:2px">3 / 5 FCSS → 0.24 pts</div></div>
+      <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:9px;border:1px solid var(--border)"><div class="fs13 fw5 tm">Courses Completed: 3</div><div class="mono fs13" style="margin-top:2px">3 / 5 FCCS → 0.24 pts</div></div>
       <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:9px;border:1px solid var(--border)"><div class="fs13 fw5 tm">BERT Confidence</div><div class="mono fs13" style="margin-top:2px">0.9993 → 0.20 pts</div></div>
     </div>
   </div>
@@ -1295,7 +1295,7 @@ function iSubmit(){ return `
       <div class="fg"><label class="fl" for="sn">Full Name</label><input type="text" id="sn" value="Marcus Johnson"></div>
     </div>
     <fieldset class="fg" style="border:none;padding:0">
-      <legend class="fl">FCSS Courses Completed</legend>
+      <legend class="fl">FCCS Courses Completed</legend>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:4px">
         <label style="display:flex;align-items:center;gap:7px;font-size:0.8125rem;color:var(--text2);cursor:pointer;min-height:44px"><input type="checkbox" id="c1" value="CIS4385C" checked onchange="upPrev()"> CIS4385C — Digital Forensics</label>
         <label style="display:flex;align-items:center;gap:7px;font-size:0.8125rem;color:var(--text2);cursor:pointer;min-height:44px"><input type="checkbox" id="c2" value="CIS4360" checked onchange="upPrev()"> CIS4360 — Computer Security</label>
@@ -1331,7 +1331,7 @@ Cumulative GPA: 3.75</textarea></div>
 </div>`}
 
 function iStudents(){ return `
-<div class="wbanner"><div><div class="wt">Student Records</div><div class="ws">FCSS program enrollees</div></div><div class="wr"><div class="wrl">${RDATA[curRole]?.label}</div><div class="wri">${esc(curUser)}</div></div></div>
+<div class="wbanner"><div><div class="wt">Student Records</div><div class="ws">FCCS program enrollees</div></div><div class="wr"><div class="wrl">${RDATA[curRole]?.label}</div><div class="wri">${esc(curUser)}</div></div></div>
 <div class="card"><div class="ch"><span class="ct">Enrolled Students</span><span class="bdg binf">200 total</span></div>
   <div style="overflow-x:auto">
   <table class="tbl" aria-label="Student records">
@@ -1388,7 +1388,7 @@ function eSearch(){ return `
   <div class="card"><div class="ch"><span class="ct">Privacy — FERPA Compliant</span></div>
     <div style="display:flex;flex-direction:column;gap:8px">
       <div style="display:flex;gap:8px"><span class="bdg bok">✓</span><span class="fs13 tm">Credential hash matches ledger</span></div>
-      <div style="display:flex;gap:8px"><span class="bdg bok">✓</span><span class="fs13 tm">FCSS courses completed</span></div>
+      <div style="display:flex;gap:8px"><span class="bdg bok">✓</span><span class="fs13 tm">FCCS courses completed</span></div>
       <div style="display:flex;gap:8px"><span class="bdg bok">✓</span><span class="fs13 tm">Issuing institution (famu.edu) + PQ signature</span></div>
       <div style="display:flex;gap:8px"><span class="bdg berr">✗</span><span class="fs13 tm">GPA or raw grades — private under FERPA</span></div>
     </div>
@@ -1553,7 +1553,7 @@ function aNLP(){ return `
       <button class="btn btn-secondary btn-sm" onclick="qn('CIS4361 Applied Security A-')">CIS4361</button>
       <button class="btn btn-secondary btn-sm" onclick="qn('CNT4406 Network Security B')">CNT4406</button>
       <button class="btn btn-secondary btn-sm" onclick="qn('COP3710 Database Management A')">COP3710</button>
-      <button class="btn btn-secondary btn-sm" onclick="qn('MAD2104 Discrete Mathematics B+')">Non-FCSS</button>
+      <button class="btn btn-secondary btn-sm" onclick="qn('MAD2104 Discrete Mathematics B+')">Non-FCCS</button>
     </div>
     <div id="nlpres" class="rbox rinf" style="margin-top:12px" aria-live="polite"><div class="fs13 td">Run a classification above</div></div>
   </div>
@@ -1564,7 +1564,7 @@ function aNLP(){ return `
       <tr><td>Macro F1</td><td class="mono tm">0.8824</td><td class="mono tg fw5">1.0000</td><td class="mono tg">+0.1176</td></tr>
       <tr><td>Val Loss</td><td class="mono tm">—</td><td class="mono tg fw5">0.0009</td><td class="mono td">Epoch 4/4</td></tr>
     </tbody></table></div>
-    <div class="rbox rok" style="margin-top:10px"><div class="fs13 fw5 tg">Val Acc 1.0 · Val F1 1.0 with real FAMU FCSS course codes</div></div>
+    <div class="rbox rok" style="margin-top:10px"><div class="fs13 fw5 tg">Val Acc 1.0 · Val F1 1.0 with real FAMU FCCS course codes</div></div>
   </div>
 </div>`}
 
@@ -1872,7 +1872,7 @@ async function doSub() {
 
   const credentialJson = JSON.stringify({
     studentID: id,
-    program: 'FAMU-FCSS',
+    program: 'FAMU-FCCS',
     courses_completed: crs,
     eligibility_score: parseFloat(sc.toFixed(4)),
     issuedAt: new Date().toISOString()
@@ -1951,7 +1951,7 @@ function demoC() {
 }
 
 function demoCred2(h) {
-  rCred({isValid:true,identifier:'CERTCHAIN-FAMU10001-ea9c7c9e',credentialHash:h,educationalProgram:'FAMU-FCSS',recognizedBy:'famu.edu',competencyRequired:['CIS4385C','CIS4360','CIS4361'],eligibilityScore:0.8399,dateCreated:new Date().toISOString(),postQuantumSigned:true,pqAlgorithm:'CRYSTALS-Dilithium3'});
+  rCred({isValid:true,identifier:'CERTCHAIN-FAMU10001-ea9c7c9e',credentialHash:h,educationalProgram:'FAMU-FCCS',recognizedBy:'famu.edu',competencyRequired:['CIS4385C','CIS4360','CIS4361'],eligibilityScore:0.8399,dateCreated:new Date().toISOString(),postQuantumSigned:true,pqAlgorithm:'CRYSTALS-Dilithium3'});
 }
 
 function rCred(d) {
@@ -1966,7 +1966,7 @@ function rCred(d) {
       </div>
     </div>
     <div class="ccb">
-      <div class="ccf"><span class="ccfl">Program</span><span class="ccfv">${d.educationalProgram||'FAMU-FCSS'}</span></div>
+      <div class="ccf"><span class="ccfl">Program</span><span class="ccfv">${d.educationalProgram||'FAMU-FCCS'}</span></div>
       <div class="ccf"><span class="ccfl">Issuer</span><span class="ccfv">${d.recognizedBy||'famu.edu'}</span></div>
       <div class="ccf"><span class="ccfl">Courses</span><span class="ccfv" style="font-size:0.6875rem">${(d.competencyRequired||[]).join(', ')}</span></div>
       <div class="ccf"><span class="ccfl">Score</span><span class="ccfv ta">${(d.eligibilityScore||0).toFixed(4)}</span></div>
@@ -2045,7 +2045,7 @@ function demoStud() {
     +'<div style="display:flex;gap:5px"><span class="bdg bok">VALID</span>'
     +'<span class="bdg borg">PQ Signed</span></div></div>'
     +'<div class="ccb">'
-    +'<div class="ccf"><span class="ccfl">Program</span><span class="ccfv">FAMU-FCSS</span></div>'
+    +'<div class="ccf"><span class="ccfl">Program</span><span class="ccfv">FAMU-FCCS</span></div>'
     +'<div class="ccf"><span class="ccfl">Courses</span><span class="ccfv">CIS4385C, CIS4360, CIS4361</span></div>'
     +'<div class="ccf"><span class="ccfl">Score</span><span class="ccfv ta">0.8399</span></div>'
     +'<div class="ccf"><span class="ccfl">PQ Algorithm</span>'

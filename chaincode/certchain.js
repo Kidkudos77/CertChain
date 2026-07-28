@@ -2,7 +2,7 @@
 /**
  * CertChain Chaincode — Hyperledger Fabric Smart Contract
  * =========================================================
- * FAMU FCSS Micro-Credentialing System
+ * FAMU FCCS Micro-Credentialing System
  *
  * Layer 2 — Weighted Eligibility Scoring Algorithm
  *   Score = 0.40*(GPA/4.0) + 0.40*(courses/5) + 0.20*(bert_confidence)
@@ -39,9 +39,9 @@
 const { Contract } = require('fabric-contract-api');
 const crypto       = require('crypto');
 
-const PROGRAM      = 'FAMU-FCSS';
+const PROGRAM      = 'FAMU-FCCS';
 const ISSUER       = 'famu.edu';
-const FCSS_COURSES = ['CIS4385C','CIS4360','CIS4361','CNT4406','COP3710'];
+const FCCS_COURSES = ['CIS4385C','CIS4360','CIS4361','CNT4406','COP3710'];
 const MIN_GPA      = 3.0;
 const MIN_COURSES  = 3;
 const W1=0.40, W2=0.40, W3=0.20;
@@ -111,7 +111,7 @@ class CertChain extends Contract {
         // student_name and gpa intentionally NOT destructured for on-chain use
 
         const validCourses = (courses_completed||[]).filter(
-            c => FCSS_COURSES.includes(c.toUpperCase())
+            c => FCCS_COURSES.includes(c.toUpperCase())
         );
 
         // Hard pre-checks — computed from off-chain data, not stored
@@ -125,10 +125,10 @@ class CertChain extends Contract {
         }
         if (validCourses.length < MIN_COURSES) {
             await this._log(ctx, studentID, 'REJECTED',
-                `Only ${validCourses.length} FCSS courses completed`);
+                `Only ${validCourses.length} FCCS courses completed`);
             return JSON.stringify({
                 success: false,
-                reason: `Only ${validCourses.length} valid FCSS courses (need ${MIN_COURSES}).`
+                reason: `Only ${validCourses.length} valid FCCS courses (need ${MIN_COURSES}).`
             });
         }
 
@@ -411,7 +411,7 @@ class CertChain extends Contract {
         this._assertRole(ctx, [ROLES.INSTITUTION, ROLES.ADMIN]);
         let total=0, active=0, revoked=0, scoreSum=0, pqSigned=0, ipfsLinked=0;
         const courseCounts = {};
-        FCSS_COURSES.forEach(c => courseCounts[c]=0);
+        FCCS_COURSES.forEach(c => courseCounts[c]=0);
 
         const it = await ctx.stub.getStateByRange('CRED~', 'CRED~\uFFFF');
         let r    = await it.next();
