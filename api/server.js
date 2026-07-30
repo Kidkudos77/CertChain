@@ -25,6 +25,7 @@ const fs         = require('fs');
 const path       = require('path');
 const auth       = require('./auth');
 const { getContract } = require('../wallet/wallet_setup');
+const mmr        = require('../chaincode/mmr');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -157,6 +158,7 @@ app.use((req, _res, next) => {
 // ── Input validation helpers ─────────────────────────────────────────────────
 const HASH_PATTERN    = /^[a-f0-9]{64}$/;       // SHA-256 hex
 const STUDENTID_PATTERN = /^[A-Za-z0-9_-]{3,64}$/;
+const BATCHID_PATTERN   = /^[A-Za-z0-9_-]{1,100}$/;
 
 function validateHash(h) {
     return typeof h === 'string' && HASH_PATTERN.test(h);
@@ -164,6 +166,10 @@ function validateHash(h) {
 
 function validateStudentID(id) {
     return typeof id === 'string' && STUDENTID_PATTERN.test(id);
+}
+
+function validateBatchId(id) {
+    return typeof id === 'string' && BATCHID_PATTERN.test(id);
 }
 
 // nlpPayload schema validation — H4 fix
@@ -401,6 +407,147 @@ app.get('/analytics', auth.requireAuth(['institution', 'admin']), async (req, re
         return res.json(JSON.parse(result.toString()));
     } catch(e) {
         return res.status(403).json({ error: safeError(e) });
+    }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  MMR BATCH ANCHORING — additive integrity layer (see chaincode/mmr.js)
+//  Batches credentials into a Merkle Mountain Range so a verifier can audit
+//  many credentials against one compact anchored root, instead of only the
+//  existing per-credential O(1) hash lookup at /verify/:hash.
+// ════════════════════════════════════════════════════════════════════════════
+
+// GET /mmr/unanchored?since=<ISO8601>  — batch-selection helper
+app.get('/mmr/unanchored', auth.requireAuth(['institution', 'admin']), async (req, res) => {
+    const since = typeof req.query.since === 'string' ? auth.sanitizeStr(req.query.since, 40) : '';
+    try {
+        const { contract, gateway } = await getContract(req.session.fabricID);
+        const result = await contract.evaluateTransaction('getUnanchoredCredentials', since);
+        await gateway.disconnect();
+        return res.json(JSON.parse(result.toString()));
+    } catch(e) {
+        console.error({ id: req.id, route: '/mmr/unanchored', error: e.message });
+        return res.status(500).json({ error: safeError(e) });
+    }
+});
+
+// POST /mmr/anchor  — body: { batchId, credHashes: [ ... ] }
+// Builds the MMR off-chain to derive the root, then submits it to the
+// chaincode, which independently recomputes the root from the same
+// credHashes and rejects the transaction if it disagrees (see
+// anchorMMRRoot in chaincode/certchain.js) — this endpoint cannot force
+// through a bogus root, it can only propose one.
+app.post('/mmr/anchor', auth.requireAuth(['institution', 'admin']), async (req, res) => {
+    const { batchId, credHashes } = req.body || {};
+
+    if (!validateBatchId(batchId))
+        return res.status(400).json({ error: 'Invalid batchId format.' });
+    if (!Array.isArray(credHashes) || credHashes.length === 0 || credHashes.length > 500)
+        return res.status(400).json({ error: 'credHashes must be a non-empty array (max 500).' });
+    if (!credHashes.every(validateHash))
+        return res.status(400).json({ error: 'One or more credHashes are not valid SHA-256 hex hashes.' });
+
+    let built;
+    try { built = mmr.buildMMR(credHashes); }
+    catch(e) { return res.status(400).json({ error: safeError(e) }); }
+
+    try {
+        const { contract, gateway } = await getContract(req.session.fabricID);
+        const result = await contract.submitTransaction(
+            'anchorMMRRoot', batchId, built.root, JSON.stringify(credHashes), new Date().toISOString());
+        await gateway.disconnect();
+        return res.status(201).json(JSON.parse(result.toString()));
+    } catch(e) {
+        console.error({ id: req.id, route: '/mmr/anchor', error: e.message });
+        return res.status(422).json({ error: safeError(e) });
+    }
+});
+
+// GET /mmr/root/:batchId
+app.get('/mmr/root/:batchId', auth.requireAuth(), async (req, res) => {
+    if (!validateBatchId(req.params.batchId))
+        return res.status(400).json({ error: 'Invalid batchId format.' });
+
+    try {
+        const { contract, gateway } = await getContract(req.session.fabricID);
+        const result = await contract.evaluateTransaction('getMMRRoot', req.params.batchId);
+        await gateway.disconnect();
+        return res.json(JSON.parse(result.toString()));
+    } catch(e) {
+        return res.status(404).json({ error: safeError(e, 'Batch not found.') });
+    }
+});
+
+// GET /mmr/batch/:batchId/members
+app.get('/mmr/batch/:batchId/members', auth.requireAuth(), async (req, res) => {
+    if (!validateBatchId(req.params.batchId))
+        return res.status(400).json({ error: 'Invalid batchId format.' });
+
+    try {
+        const { contract, gateway } = await getContract(req.session.fabricID);
+        const result = await contract.evaluateTransaction('getMMRBatchMembers', req.params.batchId);
+        await gateway.disconnect();
+        return res.json(JSON.parse(result.toString()));
+    } catch(e) {
+        return res.status(500).json({ error: safeError(e) });
+    }
+});
+
+// GET /mmr/proof/:batchId/:credHash
+// Rebuilds the batch's MMR from its on-chain leaf list and returns an
+// inclusion proof for credHash — the thing a verifier needs to audit one
+// credential against the batch's compact anchored root via POST /mmr/verify.
+app.get('/mmr/proof/:batchId/:credHash', auth.requireAuth(), async (req, res) => {
+    const { batchId, credHash } = req.params;
+    if (!validateBatchId(batchId))
+        return res.status(400).json({ error: 'Invalid batchId format.' });
+    if (!validateHash(credHash))
+        return res.status(400).json({ error: 'Invalid hash format.' });
+
+    try {
+        const { contract, gateway } = await getContract(req.session.fabricID);
+        const membersResult = await contract.evaluateTransaction('getMMRBatchMembers', batchId);
+        await gateway.disconnect();
+        const { credHashes } = JSON.parse(membersResult.toString());
+
+        const leafIndex = credHashes.indexOf(credHash);
+        if (leafIndex === -1)
+            return res.status(404).json({ error: `Credential not found in batch '${batchId}'.` });
+
+        const built = mmr.buildMMR(credHashes);
+        const proof = mmr.generateProof(built, leafIndex);
+        return res.json({ credHash, batchId, proof });
+    } catch(e) {
+        console.error({ id: req.id, route: '/mmr/proof', error: e.message });
+        return res.status(500).json({ error: safeError(e) });
+    }
+});
+
+// POST /mmr/verify  — body: { credHash, batchId, proof }
+// Complements GET /verify/:hash (single-credential lookup): this audits a
+// credential against a compact root covering its whole batch, using a
+// caller-supplied inclusion proof. Verification happens on-chain — the
+// chaincode cross-checks proof.root against the ledger's own anchored
+// root, so a proof that is merely self-consistent is not enough.
+app.post('/mmr/verify', auth.requireAuth(), async (req, res) => {
+    const { credHash, batchId, proof } = req.body || {};
+    if (!validateHash(credHash))
+        return res.status(400).json({ error: 'Invalid credential hash format.' });
+    if (!validateBatchId(batchId))
+        return res.status(400).json({ error: 'Invalid batchId format.' });
+    if (!proof || typeof proof !== 'object')
+        return res.status(400).json({ error: 'proof is required.' });
+
+    try {
+        const { contract, gateway } = await getContract(req.session.fabricID);
+        const result = await contract.evaluateTransaction(
+            'verifyMMRInclusion', credHash, batchId, JSON.stringify(proof));
+        await gateway.disconnect();
+        res.setHeader('Content-Type', 'application/ld+json');
+        return res.json(JSON.parse(result.toString()));
+    } catch(e) {
+        console.error({ id: req.id, route: '/mmr/verify', error: e.message });
+        return res.status(500).json({ error: safeError(e) });
     }
 });
 

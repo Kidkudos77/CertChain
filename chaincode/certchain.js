@@ -34,10 +34,24 @@
  *  Hash mismatches emit a VERIFY_MISMATCH event visible to admins.
  *  Admins can query the verification log via getVerificationLog().
  * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * ── MMR BATCH ANCHORING (additive integrity layer) ────────────────────────────
+ *  The CRED~<hash> scheme above is a 1:1 hash pointer per credential — a
+ *  verifier checking N credentials makes N independent ledger lookups, with
+ *  no way to audit a whole set against one compact commitment. anchorMMRRoot()
+ *  adds that without touching CRED~<hash> at all: credentials are batched
+ *  (per institution, per issuance day/week) into a Merkle Mountain Range,
+ *  and only the batch root is written, under its own MMRROOT~<batchId> key.
+ *  The root is recomputed on-chain from the supplied credential hashes and
+ *  the transaction is rejected if it disagrees with the caller's claimed
+ *  root — endorsing peers derive it themselves rather than trusting it.
+ *  See mmr.js for the MMR construction and proof verification.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
 const { Contract } = require('fabric-contract-api');
 const crypto       = require('crypto');
+const mmr          = require('./mmr');
 
 const PROGRAM      = 'FAMU-FCCS';
 const ISSUER       = 'famu.edu';
@@ -74,6 +88,12 @@ class CertChain extends Contract {
                            'eligibility_score','issuedAt','status','ipfs_cid','pq_signature'],
                 offChain: ['gpa','student_name','bert_confidence','raw_transcript'],
                 ferpaProtected: ['gpa','student_name','grades','transcript_text']
+            },
+            integrityLayers: {
+                perCredential: 'CRED~<sha256 hash> — O(1) ledger lookup per credential',
+                batchAnchor:   'MMRROOT~<batchId> — Merkle Mountain Range root over a ' +
+                               'batch of credentials; supports compact multi-credential ' +
+                               'inclusion proofs via verifyMMRInclusion()'
             }
         };
         await ctx.stub.putState('GENESIS', Buffer.from(JSON.stringify(genesis)));
@@ -445,6 +465,206 @@ class CertChain extends Contract {
                 note: 'GPA and student PII stored off-chain in IPFS per FERPA requirements'
             }
         });
+    }
+
+    // ── MMR Anchoring (batched multi-credential integrity root) ───────────────
+    // Additive integrity layer on top of the existing 1:1 CRED~<hash> scheme.
+    // Credentials are batched (institution/day/week — caller's choice) into an
+    // append-only Merkle Mountain Range. Only the resulting root is written to
+    // the ledger, under its own MMRROOT~<batchId> key — the existing CRED~<hash>
+    // records are untouched. A verifier can still do a single O(1) hash lookup
+    // via verifyCredential(), OR request an MMR inclusion proof and audit that
+    // credential against the one compact anchored root covering the batch.
+    //
+    // The root is NOT taken on faith from the caller: this function rebuilds
+    // the MMR from the supplied credHashes itself and rejects the transaction
+    // if the recomputed root disagrees with the submitted `root`. Because
+    // Fabric endorsing peers execute this deterministically and must agree on
+    // the write set, that recomputation — not the caller's word — is what
+    // actually gets endorsed onto the ledger.
+    async anchorMMRRoot(ctx, batchId, root, credHashesJSON, timestamp) {
+        this._assertRole(ctx, [ROLES.INSTITUTION, ROLES.ADMIN]);
+
+        if (!batchId || typeof batchId !== 'string') throw new Error('batchId is required.');
+
+        const existing = await ctx.stub.getState(`MMRROOT~${batchId}`);
+        if (existing && existing.length > 0) {
+            throw new Error(`Batch '${batchId}' is already anchored. Use a new batchId.`);
+        }
+
+        let credHashes;
+        try { credHashes = JSON.parse(credHashesJSON); }
+        catch (e) { throw new Error('credHashesJSON must be a JSON array of credential hashes.'); }
+
+        if (!Array.isArray(credHashes) || credHashes.length === 0) {
+            throw new Error('A batch needs at least one credential hash.');
+        }
+        if (new Set(credHashes).size !== credHashes.length) {
+            throw new Error('Duplicate credHash within the same batch.');
+        }
+
+        // Every leaf must be a credential that actually exists on-chain, and
+        // must not already belong to a different, already-sealed batch.
+        for (const credHash of credHashes) {
+            const raw = await ctx.stub.getState(`CRED~${credHash}`);
+            if (!raw || raw.length === 0) {
+                throw new Error(`Cannot batch unknown credential ${credHash}.`);
+            }
+            const memberKey = ctx.stub.createCompositeKey('mmrmember', [credHash]);
+            const already   = await ctx.stub.getState(memberKey);
+            if (already && already.length > 0) {
+                throw new Error(`Credential ${credHash} is already anchored in batch ${already.toString()}.`);
+            }
+        }
+
+        // Recompute the root ourselves — never trust the caller's claim.
+        const built = mmr.buildMMR(credHashes);
+        if (built.root !== root) {
+            throw new Error(
+                'Submitted root does not match the root recomputed from the ' +
+                'supplied credential hashes. Refusing to anchor.'
+            );
+        }
+
+        const record = {
+            batchId,
+            root,
+            leafCount:  credHashes.length,
+            timestamp,
+            anchoredBy: this._getCallerID(ctx),
+            anchoredAt: new Date().toISOString(),
+        };
+        await ctx.stub.putState(`MMRROOT~${batchId}`, Buffer.from(JSON.stringify(record)));
+
+        for (let i = 0; i < credHashes.length; i++) {
+            const credHash = credHashes[i];
+            const leafKey  = ctx.stub.createCompositeKey('mmrleaf', [batchId, String(i).padStart(8, '0')]);
+            await ctx.stub.putState(leafKey, Buffer.from(credHash));
+            const memberKey = ctx.stub.createCompositeKey('mmrmember', [credHash]);
+            await ctx.stub.putState(memberKey, Buffer.from(batchId));
+        }
+
+        ctx.stub.setEvent('MMRRootAnchored', Buffer.from(JSON.stringify(record)));
+        await this._log(ctx, batchId, 'MMR_ANCHORED',
+            `${credHashes.length} credentials, root ${root.substring(0, 16)}...`);
+        return JSON.stringify({ success: true, ...record });
+    }
+
+    // ── Get anchored MMR root for a batch ──────────────────────────────────────
+    async getMMRRoot(ctx, batchId) {
+        const raw = await ctx.stub.getState(`MMRROOT~${batchId}`);
+        if (!raw || raw.length === 0) throw new Error(`No MMR root anchored for batch '${batchId}'.`);
+        return raw.toString();
+    }
+
+    // ── List a batch's members in leaf (append) order ──────────────────────────
+    // Needed to rebuild the MMR off-chain and generate an inclusion proof.
+    async getMMRBatchMembers(ctx, batchId) {
+        const results = [];
+        const it = await ctx.stub.getStateByPartialCompositeKey('mmrleaf', [batchId]);
+        let r = await it.next();
+        while (!r.done) {
+            results.push(r.value.value.toString());
+            r = await it.next();
+        }
+        return JSON.stringify({ batchId, leafCount: results.length, credHashes: results });
+    }
+
+    // ── Verify a credential's MMR inclusion proof against the anchored root ───
+    // Complements verifyCredential(): that does an O(1) single-record lookup;
+    // this audits the same credential against a compact root covering an
+    // entire batch, using a client-supplied Merkle path. The proof's claimed
+    // root is always cross-checked against the ledger's own MMRROOT~<batchId>
+    // record — a proof that only "looks" internally consistent is rejected
+    // unless it also matches what was actually anchored on-chain.
+    async verifyMMRInclusion(ctx, credHash, batchId, proofJSON) {
+        this._assertRole(ctx, [ROLES.VERIFIER, ROLES.STUDENT, ROLES.INSTITUTION, ROLES.ADMIN]);
+
+        const txID      = ctx.stub.getTxID();
+        const callerID  = this._getCallerID(ctx);
+        const timestamp = new Date().toISOString();
+
+        const rootRaw = await ctx.stub.getState(`MMRROOT~${batchId}`);
+        if (!rootRaw || rootRaw.length === 0) {
+            await this._logVerification(ctx, {
+                credHash, batchId, result: 'BATCH_NOT_FOUND', callerID, timestamp, txID,
+                alert: true, alertMsg: `Batch '${batchId}' has no anchored root`
+            });
+            return JSON.stringify({
+                isValid: false, credHash, batchId,
+                message: `No MMR root anchored for batch '${batchId}'.`,
+                verificationLog: { result: 'BATCH_NOT_FOUND', timestamp, callerID }
+            });
+        }
+        const rootRecord = JSON.parse(rootRaw.toString());
+
+        let proof;
+        try { proof = JSON.parse(proofJSON); }
+        catch (e) {
+            await this._logVerification(ctx, {
+                credHash, batchId, result: 'MALFORMED_PROOF', callerID, timestamp, txID,
+                alert: true, alertMsg: 'Proof JSON could not be parsed'
+            });
+            return JSON.stringify({ isValid: false, credHash, batchId, message: 'Malformed proof JSON.' });
+        }
+
+        const proofInternallyValid = mmr.verifyProof(credHash, proof);
+        const rootMatches          = proof.root === rootRecord.root;
+        const isValid              = proofInternallyValid && rootMatches;
+
+        await this._logVerification(ctx, {
+            credHash, batchId,
+            result:   isValid ? 'MMR_VERIFIED' : 'MMR_MISMATCH',
+            callerID, timestamp, txID,
+            alert:    !isValid,
+            alertMsg: isValid ? undefined :
+                `MMR inclusion proof failed for ${credHash.substring(0, 16)}... in batch ${batchId}`
+        });
+
+        if (!isValid) {
+            ctx.stub.setEvent('VerifyMismatch', Buffer.from(JSON.stringify({
+                credHash, batchId, callerID, timestamp, txID,
+                reason: proofInternallyValid
+                    ? 'Proof root does not match anchored root'
+                    : 'Proof failed internal verification'
+            })));
+        }
+
+        return JSON.stringify({
+            isValid,
+            credHash,
+            batchId,
+            root:            rootRecord.root,
+            leafCount:       rootRecord.leafCount,
+            anchoredAt:      rootRecord.anchoredAt,
+            verificationLog: { result: isValid ? 'MMR_VERIFIED' : 'MMR_MISMATCH', timestamp, callerID }
+        });
+    }
+
+    // ── Find credentials not yet folded into any MMR batch ─────────────────────
+    // Batch-selection helper: an operator calls this to decide what goes into
+    // the next anchorMMRRoot() call (e.g. "everything issued since yesterday").
+    async getUnanchoredCredentials(ctx, sinceTimestamp) {
+        this._assertRole(ctx, [ROLES.INSTITUTION, ROLES.ADMIN]);
+        const results = [];
+        const it = await ctx.stub.getStateByRange('CRED~', 'CRED~\uFFFF');
+        let r = await it.next();
+        while (!r.done) {
+            const credHash = r.value.key.substring('CRED~'.length);
+            const c = JSON.parse(r.value.value.toString());
+            if (!sinceTimestamp || c.issuedAt >= sinceTimestamp) {
+                const memberKey = ctx.stub.createCompositeKey('mmrmember', [credHash]);
+                const already   = await ctx.stub.getState(memberKey);
+                if (!already || already.length === 0) {
+                    results.push({
+                        credHash, credentialID: c.credentialID,
+                        studentID: c.studentID, issuedAt: c.issuedAt
+                    });
+                }
+            }
+            r = await it.next();
+        }
+        return JSON.stringify({ count: results.length, credentials: results });
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
