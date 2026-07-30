@@ -1,8 +1,8 @@
 """
-BlockCert — BERT Transcript Classifier  (Layer 1)
+CertChain — BERT Transcript Classifier  (Layer 1)
 ====================================================
 Fine-tunes BERT to classify individual transcript sentences
-into FCSS course categories.
+into FCCS course categories.
 
 Thesis contribution:
   Replaces regex/keyword matching with a learned classifier that handles
@@ -63,10 +63,10 @@ class TranscriptSentenceDataset(Dataset):
 
 class BERTClassifier:
     """
-    Fine-tuned BERT classifier for FCSS transcript sentence classification.
+    Fine-tuned BERT classifier for FCCS transcript sentence classification.
 
     Input:  one sentence from a student transcript
-    Output: predicted FCSS course code (or NONE) + confidence score
+    Output: predicted FCCS course code (or NONE) + confidence score
 
     This is the core of Layer 1's algorithmic contribution.
     The model learns semantic representations of course descriptions,

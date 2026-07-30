@@ -1,5 +1,5 @@
 """
-BlockCert — Transcript Parser
+CertChain — Transcript Parser
 ================================
 Combines BERT course detection (Layer 1) with GPA regex extraction
 to produce a complete structured payload for the smart contract (Layer 2).
@@ -27,7 +27,7 @@ class ParsedTranscript:
     eligibility_score:    float
     eligible:             bool
     ineligibility_reason: Optional[str]
-    program:              str = 'FAMU-FCSS'
+    program:              str = 'FAMU-FCCS'
 
 
 class TranscriptParser:
@@ -100,7 +100,7 @@ class TranscriptParser:
         if gpa < MIN_GPA:
             return False, f'GPA {gpa} below minimum {MIN_GPA}'
         if len(courses) < MIN_COURSES:
-            return False, f'Only {len(courses)} FCSS courses completed (need {MIN_COURSES})'
+            return False, f'Only {len(courses)} FCCS courses completed (need {MIN_COURSES})'
         if score < SCORE_THRESHOLD:
             return False, f'Eligibility score {score} below threshold {SCORE_THRESHOLD}'
         return True, None

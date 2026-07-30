@@ -1,4 +1,4 @@
-# BlockCert Python Dependencies
+# CertChain Python Dependencies
 # Install: pip install -r requirements.txt
 
 # Layer 1 — BERT NLP

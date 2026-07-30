@@ -1,5 +1,5 @@
 """
-BlockCert — System Performance Evaluation (Layer 3)
+CertChain — System Performance Evaluation (Layer 3)
 Measures latency and throughput across all API endpoints.
 Run after network + API are up: python evaluation/evaluate_system.py
 """

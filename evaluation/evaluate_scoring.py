@@ -1,5 +1,5 @@
 """
-BlockCert — Scoring Evaluation (Layer 2)
+CertChain — Scoring Evaluation (Layer 2)
 Weighted multi-factor scoring vs binary threshold baseline.
 Run: python evaluation/evaluate_scoring.py --data dataset/output/structured_dataset.csv
 """

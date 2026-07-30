@@ -1,7 +1,7 @@
 # CertChain
-### FAMU FCSS Blockchain Micro-Credentialing System
+### FAMU FCCS (Cyber Defense Certificate) Blockchain Micro-Credentialing System
 
-[![CI/CD](https://github.com/YOUR_USERNAME/blockcert/actions/workflows/blockcert.yml/badge.svg)](https://github.com/YOUR_USERNAME/blockcert/actions)
+[![CI/CD](https://github.com/YOUR_USERNAME/certchain/actions/workflows/certchain.yml/badge.svg)](https://github.com/YOUR_USERNAME/certchain/actions)
 [![Python](https://img.shields.io/badge/Python-3.10+-blue)](https://python.org)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green)](https://nodejs.org)
 [![Hyperledger Fabric](https://img.shields.io/badge/Hyperledger-Fabric%202.5-orange)](https://hyperledger.org)
@@ -12,7 +12,8 @@
 
 > **Thesis Statement:** A three-layer framework in which a BERT-based NLP classifier extracts
 > structured eligibility features from unstructured student transcripts, a weighted multi-factor
-> scoring algorithm evaluates those features against FCSS program requirements, and a Hyperledger
+> scoring algorithm evaluates those features against FCCS (Cyber Defense Certificate) program
+> requirements, and a Hyperledger
 > Fabric smart contract conditionally issues tamper-proof micro-credentials based on that score —
 > eliminating the manual review process that current systems require. Deployed on the National
 > Research Platform using Kubernetes with GitHub Actions for CI/CD. Post-quantum signatures using
@@ -42,7 +43,7 @@
 ## Overview
 
 CertChain is a graduate thesis project developed at **Florida A&M University** for the
-**Forensic Computer Science and Security (FCSS)** certificate program. The system automates
+**Cyber Defense Certificate (FCCS)** certificate program. The system automates
 the micro-credential issuance process — a process that currently requires manual administrative
 review — by combining natural language processing, a weighted eligibility scoring algorithm,
 and a permissioned blockchain network.
@@ -59,7 +60,7 @@ cryptographically valid against future quantum computing threats.
 
 | # | Layer | Contribution Type | Description | Evaluation Metric |
 |---|-------|------------------|-------------|-------------------|
-| 1 | Layer 1 | **Algorithm** | Fine-tuned BERT classifier for FCSS course identification from transcript text | Precision, Recall, F1 vs. regex baseline |
+| 1 | Layer 1 | **Algorithm** | Fine-tuned BERT classifier for FCCS course identification from transcript text | Precision, Recall, F1 vs. regex baseline |
 | 2 | Layer 2 | **Algorithm** | Weighted multi-factor eligibility scoring function encoded on-chain | FPR, FNR vs. binary threshold baseline |
 | 3 | Layer 3 | **System** | Hyperledger Fabric + IPFS + REST API + Kubernetes deployment on NRP | Latency (ms), Throughput (TPS) |
 | 4 | PQ Layer | **Novel Gap** | CRYSTALS-Dilithium3 post-quantum signatures on credential hashes | No reviewed micro-credentialing paper addresses this |
@@ -74,7 +75,7 @@ cryptographically valid against future quantum computing threats.
 │                                                              │
 │  Input : Raw unstructured transcript text                    │
 │  Model : Fine-tuned BERT (bert-base-uncased)                 │
-│  Output: FCSS course codes + BERT confidence score           │
+│  Output: FCCS course codes + BERT confidence score           │
 │  File  : nlp/bert_classifier.py                              │
 │  Metric: Precision / Recall / F1 vs. regex baseline          │
 └────────────────────────┬─────────────────────────────────────┘
@@ -87,7 +88,7 @@ cryptographically valid against future quantum computing threats.
 │         + 0.40 × (courses_completed/5)                       │
 │         + 0.20 × (bert_confidence)                           │
 │  Threshold: Score ≥ 0.70 → ELIGIBLE                          │
-│  File  : chaincode/blockcert.js (_computeScore)              │
+│  File  : chaincode/certchain.js (_computeScore)              │
 │  Metric: False Positive Rate / False Negative Rate           │
 └────────────────────────┬─────────────────────────────────────┘
                          │
@@ -119,14 +120,14 @@ cryptographically valid against future quantum computing threats.
 ## Project Structure
 
 ```
-blockcert/
+certchain/
 │
 ├── .github/
 │   └── workflows/
-│       └── blockcert.yml          # GitHub Actions CI/CD pipeline
+│       └── certchain.yml          # GitHub Actions CI/CD pipeline
 │
 ├── chaincode/
-│   └── blockcert.js               # Hyperledger Fabric smart contract
+│   └── certchain.js               # Hyperledger Fabric smart contract
 │                                  # Contains Layer 2 weighted scoring algorithm
 │                                  # Role-based access control, JSON-LD output
 │                                  # Audit log, program analytics
@@ -187,8 +188,8 @@ blockcert/
 ### Step 1 — Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/blockcert.git
-cd blockcert
+git clone https://github.com/YOUR_USERNAME/certchain.git
+cd certchain
 ```
 
 ### Step 2 — Install Python dependencies
@@ -241,18 +242,18 @@ python3 nlp/bert_classifier.py \
 
 ```bash
 cd ~/fabric-samples/test-network
-./network.sh up createChannel -c blockcertchannel -ca
-./network.sh deployCC -ccn blockcert -ccp ~/blockcert/chaincode/ -ccl javascript
+./network.sh up createChannel -c certchainchannel -ca
+./network.sh deployCC -ccn certchain -ccp ~/certchain/chaincode/ -ccl javascript
 ```
 
 ### 4. Copy Connection Profile and Enroll Identities
 
 ```bash
-mkdir -p ~/blockcert/config
+mkdir -p ~/certchain/config
 cp ~/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/connection-org1.json \
-   ~/blockcert/config/connection.json
+   ~/certchain/config/connection.json
 
-cd ~/blockcert
+cd ~/certchain
 node -e "
 const w = require('./wallet/wallet_setup');
 (async()=>{
@@ -313,7 +314,7 @@ curl http://localhost:3000/verify/abc123def456...
   "credentialStatus": "ACTIVE",
   "credentialCategory": "micro-credential",
   "recognizedBy": "famu.edu",
-  "educationalProgram": "FAMU-FCSS",
+  "educationalProgram": "FAMU-FCCS",
   "competencyRequired": ["NSA3010", "NSA4020", "NSA4030"],
   "eligibilityScore": 0.84,
   "postQuantumSigned": true,
@@ -385,14 +386,14 @@ Once access is approved:
 
 ```bash
 # Create namespace
-kubectl create namespace blockcert
+kubectl create namespace certchain
 
 # Deploy all components
-kubectl apply -f k8s/nrp-deployment.yaml -n blockcert
+kubectl apply -f k8s/nrp-deployment.yaml -n certchain
 
 # Check status
-kubectl get pods -n blockcert
-kubectl get services -n blockcert
+kubectl get pods -n certchain
+kubectl get services -n certchain
 ```
 
 To enable automatic deployment via GitHub Actions, add your NRP kubeconfig as a repository secret:
@@ -410,7 +411,7 @@ The BERT training job in `k8s/nrp-deployment.yaml` runs on NRP GPU nodes, reduci
 ## Supervisor Customization
 
 All key parameters are centralized in two files:
-`chaincode/blockcert.js` and `nlp/transcript_parser.py`
+`chaincode/certchain.js` and `nlp/transcript_parser.py`
 
 | Parameter | Variable Name | Default |
 |-----------|--------------|---------|
@@ -428,13 +429,13 @@ All key parameters are centralized in two files:
 
 ## Research Gaps Addressed
 
-| Gap | Source Paper | BlockCert Solution |
+| Gap | Source Paper | CertChain Solution |
 |-----|-------------|--------------------|
 | No automated transcript parsing | Blockchain Micro-Credential SLR | BERT classifier + pipeline |
 | Lack of interoperability (41.7%) | Gap Analysis on Blockchain Frameworks | REST API + JSON-LD responses |
 | Security concerns (41.7%) | Gap Analysis on Blockchain Frameworks | RBAC + IPFS off-chain + audit log |
 | Blockchain and analytics treated separately | Empowering Home Tutors paper | Unified NLP-to-chain pipeline |
-| No domain-specific systems | Blockchain Credentialing for Teachers | FCSS-specific implementation at FAMU |
+| No domain-specific systems | Blockchain Credentialing for Teachers | FCCS-specific implementation at FAMU |
 | No post-quantum cryptography in micro-credentialing | Blockchain Forensics SLR (gap) | CRYSTALS-Dilithium3 signature layer |
 
 ---
@@ -445,7 +446,7 @@ All key parameters are centralized in two files:
 Graduate Student, Computer Science
 Florida A&M University
 
-Thesis: *BlockCert: A Blockchain-Based Micro-Credentialing Framework with NLP-Driven Eligibility Evaluation and Post-Quantum Cryptographic Security for Cybersecurity Certificate Programs*
+Thesis: *CertChain: A Blockchain-Based Micro-Credentialing Framework with NLP-Driven Eligibility Evaluation and Post-Quantum Cryptographic Security for Cybersecurity Certificate Programs*
 
 ---
 
@@ -455,8 +456,8 @@ Thesis: *BlockCert: A Blockchain-Based Micro-Credentialing Framework with NLP-Dr
 - Hugging Face — BERT pretrained models
 - NIST Post-Quantum Cryptography Standardization Project — CRYSTALS-Dilithium3
 - National Research Platform (NRP) / Nautilus HyperCluster — compute infrastructure
-- Florida A&M University — FCSS program
+- Florida A&M University — FCCS (Cyber Defense Certificate) program
 
 ---
 
-*For setup instructions, see the [BlockCert Build Guide](BlockCert_Build_Guide.docx).*
+*For setup instructions, see the [CertChain Build Guide](CertChain_Build_Guide.docx).*

@@ -1,11 +1,11 @@
 """
-BlockCert — Post-Quantum Cryptographic Layer
+CertChain — Post-Quantum Cryptographic Layer
 ==============================================
 CRYSTALS-Dilithium signatures on top of Hyperledger Fabric credential hashing.
 
 Thesis contribution:
   No micro-credentialing paper in the reviewed literature addresses
-  post-quantum cryptography. BlockCert adds CRYSTALS-Dilithium3 —
+  post-quantum cryptography. CertChain adds CRYSTALS-Dilithium3 —
   a NIST Post-Quantum Cryptography standard — to sign credential hashes
   before on-chain storage, making issued credentials cryptographically
   valid against future quantum computing attacks.
@@ -38,7 +38,7 @@ except ImportError:
 
 class PostQuantumSigner:
     """
-    Signs BlockCert credential hashes using CRYSTALS-Dilithium3.
+    Signs CertChain credential hashes using CRYSTALS-Dilithium3.
 
     Each instance generates a fresh keypair.
     In production, the institution's keypair is generated once,
@@ -145,9 +145,9 @@ if __name__ == '__main__':
     signer = PostQuantumSigner()
 
     test_cred = {
-        'credentialID':    'BLOCKCERT-FAMU10001-abc123',
+        'credentialID':    'CERTCHAIN-FAMU10001-abc123',
         'studentID':       'FAMU10001',
-        'program':         'FAMU-FCSS',
+        'program':         'FAMU-FCCS',
         'eligibility_score': 0.84,
         'issuedAt':        datetime.utcnow().isoformat(),
     }

@@ -1,10 +1,10 @@
 """
-BlockCert — Dataset Loader
+CertChain — Dataset Loader
 ============================
 Handles two data sources with the same interface:
 
   MODE 1 — Synthetic (default, no Kaggle needed)
-    Generates 200 FCSS student records automatically.
+    Generates 200 FCCS student records automatically.
     Run: python dataset/data_loader.py --mode synthetic
 
   MODE 2 — Kaggle drop-in
@@ -26,7 +26,7 @@ from typing import List, Optional
 
 random.seed(42)
 
-# ── FCSS Program Catalog ──────────────────────────────────────────────────────
+# ── FCCS Program Catalog ──────────────────────────────────────────────────────
 COURSES = {
     'CIS4385C': 'Digital Forensics',
     'CIS4360':  'Introduction to Computer Security',
@@ -138,7 +138,7 @@ KAGGLE_COLUMN_MAP = {
     'gpa':          None,    # e.g. 'GPA' or 'cumulative_gpa'
     'courses':      None,    # e.g. 'Courses' — comma or pipe separated course codes
     'grade':        None,    # e.g. 'Grade' — if one row = one course
-    'program':      None,    # e.g. 'Program' — filter to FCSS rows only
+    'program':      None,    # e.g. 'Program' — filter to FCCS rows only
 }
 
 
@@ -165,7 +165,7 @@ def make_transcript_text(name, student_id, enroll_date, course_grades, gpa) -> s
 ======================================================
 Student Name:    {name}
 Student ID:      {student_id}
-Program:         Forensic Computer Science & Security (FCSS)
+Program:         Cyber Defense Certificate (FCCS)
 Enrollment Date: {enroll_date}
 
 Completed Coursework:
@@ -274,7 +274,7 @@ def generate_synthetic(n: int = 200) -> list:
         score  = weighted_score(gpa, len(courses))
         return {
             'student_id':   sid,   'name':         name,
-            'program':      'FCSS','enroll_date':  enroll,
+            'program':      'FCCS','enroll_date':  enroll,
             'course_grades':grades,'courses':       courses,
             'gpa':          gpa,   'score':         score,
             'eligible':     score >= SCORE_THRESHOLD,
@@ -330,7 +330,7 @@ def load_kaggle(filepath: str) -> list:
 
                 students.append({
                     'student_id':    sid,   'name':         name,
-                    'program':       'FCSS','enroll_date':  '2023-01-01',
+                    'program':       'FCCS','enroll_date':  '2023-01-01',
                     'course_grades': course_grades, 'courses': courses,
                     'gpa':           gpa,   'score':         score,
                     'eligible':      score >= SCORE_THRESHOLD,
@@ -356,7 +356,7 @@ if __name__ == '__main__':
     args = p.parse_args()
 
     if args.mode == 'synthetic':
-        print(f'Generating {args.n} synthetic FCSS students...')
+        print(f'Generating {args.n} synthetic FCCS students...')
         students = generate_synthetic(args.n)
     else:
         students = load_kaggle(args.file)
