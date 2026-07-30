@@ -52,7 +52,10 @@ The system processes raw student transcript text, automatically determines eligi
 a trained BERT model and a multi-factor scoring function, and conditionally issues a
 tamper-proof micro-credential onto a Hyperledger Fabric ledger. All issued credentials are
 additionally signed using CRYSTALS-Dilithium3 post-quantum cryptography, making them
-cryptographically valid against future quantum computing threats.
+cryptographically valid against future quantum computing threats. Credentials can also be
+batched into a Merkle Mountain Range and anchored on-chain, so a verifier can audit many
+credentials against one compact root instead of one hash lookup at a time — additive to,
+not a replacement for, the existing per-credential verification.
 
 ---
 
@@ -64,6 +67,7 @@ cryptographically valid against future quantum computing threats.
 | 2 | Layer 2 | **Algorithm** | Weighted multi-factor eligibility scoring function encoded on-chain | FPR, FNR vs. binary threshold baseline |
 | 3 | Layer 3 | **System** | Hyperledger Fabric + IPFS + REST API + Kubernetes deployment on NRP | Latency (ms), Throughput (TPS) |
 | 4 | PQ Layer | **Novel Gap** | CRYSTALS-Dilithium3 post-quantum signatures on credential hashes | No reviewed micro-credentialing paper addresses this |
+| 5 | Integrity Layer | **Novel Gap** | Merkle Mountain Range batch anchoring — audits many credentials against one compact on-chain root, on top of the existing per-credential hash lookup | Proof size vs. batch size; on-chain inclusion-proof verification |
 
 ---
 
@@ -112,6 +116,20 @@ cryptographically valid against future quantum computing threats.
 │  Signs     : Credential hash at issuance time                │
 │  Purpose   : Quantum-resilient verification                  │
 │  File      : quantum/pq_signer.py                            │
+└────────────────────────┬─────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  MMR INTEGRITY LAYER (additive — does not replace CRED~hash) │
+│                                                              │
+│  Structure : Merkle Mountain Range over batched credHashes   │
+│  Batching  : per institution / per issuance day or week      │
+│  On-chain  : MMRROOT~<batchId>, separate from CRED~<hash>    │
+│  Root      : recomputed on-chain from supplied leaves —      │
+│              a mismatched caller-claimed root is rejected    │
+│  Verifies  : one credential against a whole batch's root,    │
+│              via an on-chain-checked inclusion proof          │
+│  File      : chaincode/mmr.js                                │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -127,10 +145,12 @@ certchain/
 │       └── certchain.yml          # GitHub Actions CI/CD pipeline
 │
 ├── chaincode/
-│   └── certchain.js               # Hyperledger Fabric smart contract
-│                                  # Contains Layer 2 weighted scoring algorithm
-│                                  # Role-based access control, JSON-LD output
-│                                  # Audit log, program analytics
+│   ├── certchain.js               # Hyperledger Fabric smart contract
+│   │                              # Contains Layer 2 weighted scoring algorithm
+│   │                              # Role-based access control, JSON-LD output
+│   │                              # Audit log, program analytics, MMR anchoring
+│   └── mmr.js                     # Merkle Mountain Range core (build/prove/verify)
+│                                  # Required by both certchain.js and api/server.js
 │
 ├── nlp/
 │   ├── bert_classifier.py         # BERT model — training and inference (Layer 1)
@@ -157,7 +177,9 @@ certchain/
 │   └── evaluate_system.py         # Layer 3: latency and throughput
 │
 ├── integration/
-│   └── pipeline.py                # End-to-end pipeline (all layers + PQ)
+│   ├── pipeline.py                # End-to-end pipeline (all layers + PQ)
+│   └── mmr_anchor.py              # Batch-selects + anchors an MMR root; can
+│                                  # round-trip an inclusion proof as a smoke test
 │
 ├── k8s/
 │   └── nrp-deployment.yaml        # Kubernetes manifests for NRP deployment
@@ -286,6 +308,22 @@ python3 integration/pipeline.py \
   --output results.json
 ```
 
+### 7. Anchor an MMR Batch
+
+Run this on whatever cadence fits the deployment (daily/weekly cron, or after
+each institution's issuance run). It selects credentials not yet in a batch,
+anchors their MMR root, and can optionally round-trip an inclusion proof:
+
+```bash
+export CERTCHAIN_USER=famu-institution
+export CERTCHAIN_PASSWORD=...
+
+python3 integration/mmr_anchor.py --since 2026-07-30T00:00:00Z
+
+# or, anchor and immediately verify one credential's inclusion proof
+python3 integration/mmr_anchor.py --verify <credHash>
+```
+
 ---
 
 ## API Reference
@@ -298,6 +336,12 @@ python3 integration/pipeline.py \
 | `GET`  | `/student/:id` | student | All credentials for a student |
 | `POST` | `/revoke` | institution | Revoke a credential |
 | `GET`  | `/analytics?as=...` | institution | Program-level analytics |
+| `GET`  | `/mmr/unanchored?since=...` | institution | Credentials not yet in an MMR batch |
+| `POST` | `/mmr/anchor` | institution | Anchor a batch's MMR root on-chain |
+| `GET`  | `/mmr/root/:batchId` | any | Fetch a batch's anchored root |
+| `GET`  | `/mmr/batch/:batchId/members` | any | List a batch's credentials in leaf order |
+| `GET`  | `/mmr/proof/:batchId/:credHash` | any | Get an inclusion proof for one credential |
+| `POST` | `/mmr/verify` | any | Verify an inclusion proof against the anchored root |
 
 ### Example — Verify a Credential
 
