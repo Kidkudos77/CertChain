@@ -16,5 +16,8 @@
     "fabric-ca-client": "^2.2.20",
     "fabric-network": "^2.2.20",
     "helmet": "^8.1.0"
+  },
+  "directories": {
+    "doc": "docs"
   }
 }
