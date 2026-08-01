@@ -26,6 +26,7 @@ const path       = require('path');
 const auth       = require('./auth');
 const { getContract } = require('../wallet/wallet_setup');
 const mmr        = require('../chaincode/mmr');
+const sampling   = require('./mmr_sampling');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -548,6 +549,74 @@ app.post('/mmr/verify', auth.requireAuth(), async (req, res) => {
     } catch(e) {
         console.error({ id: req.id, route: '/mmr/verify', error: e.message });
         return res.status(500).json({ error: safeError(e) });
+    }
+});
+
+// GET /verify-batch?batchId=X&sampleSize=M&rounds=r
+// IN ADDITION TO the full/per-credential path above (/mmr/verify), not a
+// replacement: samples M items per round (without replacement, exponential
+// growth across rounds — see api/mmr_sampling.js) instead of checking every
+// credential in the batch, and reuses the exact same on-chain
+// verifyMMRInclusion check per sampled item. Reports a statistical
+// confidence rather than a definitive yes/no over the whole batch.
+app.get('/verify-batch', auth.requireAuth(), async (req, res) => {
+    if (!validateBatchId(req.query.batchId))
+        return res.status(400).json({ error: 'Invalid batchId format.' });
+
+    const sampleSize = parseInt(req.query.sampleSize, 10) || sampling.DEFAULT_BASE_SAMPLE_SIZE;
+    const rounds      = parseInt(req.query.rounds, 10)     || sampling.DEFAULT_ROUNDS;
+    if (!Number.isInteger(sampleSize) || sampleSize < 1 || sampleSize > 200)
+        return res.status(400).json({ error: 'sampleSize must be an integer between 1 and 200.' });
+    if (!Number.isInteger(rounds) || rounds < 1 || rounds > 20)
+        return res.status(400).json({ error: 'rounds must be an integer between 1 and 20.' });
+
+    const batchId = req.query.batchId;
+    let contract, gateway;
+    try {
+        ({ contract, gateway } = await getContract(req.session.fabricID));
+
+        const membersResult = await contract.evaluateTransaction('getMMRBatchMembers', batchId);
+        const { credHashes } = JSON.parse(membersResult.toString());
+        if (!credHashes || credHashes.length === 0)
+            return res.status(404).json({ error: `Batch '${batchId}' not found or empty.` });
+
+        const built = mmr.buildMMR(credHashes);
+
+        const verifyOne = async (credHash) => {
+            const leafIndex = credHashes.indexOf(credHash);
+            const proof = mmr.generateProof(built, leafIndex);
+            const result = await contract.evaluateTransaction(
+                'verifyMMRInclusion', credHash, batchId, JSON.stringify(proof));
+            return JSON.parse(result.toString()).isValid === true;
+        };
+
+        const { roundsRun, itemsChecked, itemsFlagged, perRound } = await sampling.runSamplingRounds({
+            items: credHashes,
+            baseSampleSize: sampleSize,
+            rounds,
+            growthFactor: sampling.DEFAULT_GROWTH_FACTOR,
+            verifyOne,
+        });
+
+        const confidenceLevel = sampling.computeConfidence(sampling.DEFAULT_PV, roundsRun);
+
+        return res.json({
+            confidenceLevel,
+            roundsRun,
+            itemsChecked,
+            itemsFlagged,
+            batchId,
+            batchSize: credHashes.length,
+            sampleSize,
+            perRound,
+            pv:           sampling.DEFAULT_PV,
+            pvProvenance: sampling.DEFAULT_PV_PROVENANCE,
+        });
+    } catch(e) {
+        console.error({ id: req.id, route: '/verify-batch', error: e.message });
+        return res.status(500).json({ error: safeError(e) });
+    } finally {
+        if (gateway) await gateway.disconnect();
     }
 });
 

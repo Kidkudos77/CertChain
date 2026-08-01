@@ -32,6 +32,7 @@
 - [Installation](#installation)
 - [Usage](#usage)
 - [Evaluation](#evaluation)
+- [Sampling-Based Batch Verification](#sampling-based-batch-verification)
 - [Kaggle Dataset](#kaggle-dataset)
 - [NRP Deployment](#nrp-deployment)
 - [Supervisor Customization](#supervisor-customization)
@@ -68,6 +69,7 @@ not a replacement for, the existing per-credential verification.
 | 3 | Layer 3 | **System** | Hyperledger Fabric + IPFS + REST API + Kubernetes deployment on NRP | Latency (ms), Throughput (TPS) |
 | 4 | PQ Layer | **Novel Gap** | CRYSTALS-Dilithium3 post-quantum signatures on credential hashes | No reviewed micro-credentialing paper addresses this |
 | 5 | Integrity Layer | **Novel Gap** | Merkle Mountain Range batch anchoring — audits many credentials against one compact on-chain root, on top of the existing per-credential hash lookup | Proof size vs. batch size; on-chain inclusion-proof verification |
+| 6 | Sampling Layer | **Algorithm** | Round-based sampling audit over the MMR (without-replacement, exponential per-round growth) reusing the existing inclusion-proof check per sampled item | Empirically measured Pv via Monte Carlo (not assumed from source paper); items checked / payload / time vs. full verification |
 
 ---
 
@@ -166,7 +168,10 @@ certchain/
 │   └── ipfs_storage.js            # IPFS off-chain document storage
 │
 ├── api/
-│   └── server.js                  # REST API with JSON-LD credential endpoints
+│   ├── server.js                  # REST API with JSON-LD credential endpoints
+│   └── mmr_sampling.js            # Sampling audit: sampler, confidence formula,
+│                                  # round-loop orchestrator (shared with the
+│                                  # evaluation harness below)
 │
 ├── dataset/
 │   └── data_loader.py             # Synthetic dataset generator + Kaggle drop-in
@@ -174,7 +179,9 @@ certchain/
 ├── evaluation/
 │   ├── evaluate_nlp.py            # Layer 1: BERT vs. regex baseline
 │   ├── evaluate_scoring.py        # Layer 2: weighted vs. binary threshold
-│   └── evaluate_system.py         # Layer 3: latency and throughput
+│   ├── evaluate_system.py         # Layer 3: latency and throughput
+│   └── evaluate_mmr_sampling.js   # Layer 5: empirically measures Pv via
+│                                  # Monte Carlo simulation
 │
 ├── integration/
 │   ├── pipeline.py                # End-to-end pipeline (all layers + PQ)
@@ -342,6 +349,7 @@ python3 integration/mmr_anchor.py --verify <credHash>
 | `GET`  | `/mmr/batch/:batchId/members` | any | List a batch's credentials in leaf order |
 | `GET`  | `/mmr/proof/:batchId/:credHash` | any | Get an inclusion proof for one credential |
 | `POST` | `/mmr/verify` | any | Verify an inclusion proof against the anchored root |
+| `GET`  | `/verify-batch?batchId=&sampleSize=&rounds=` | any | Statistical sampling audit of a batch (see below) |
 
 ### Example — Verify a Credential
 
@@ -386,12 +394,64 @@ python3 evaluation/evaluate_scoring.py \
 python3 evaluation/evaluate_system.py \
   --api http://localhost:3000 \
   --n 50
+
+# Layer 5 — MMR sampling verification accuracy (Pv, empirically measured)
+node evaluation/evaluate_mmr_sampling.js
 ```
 
 Results are saved to:
 - `evaluation/nlp_results.json`
 - `evaluation/scoring_results.json`
 - `evaluation/system_results.json`
+- `evaluation/mmr_sampling_results.json`
+
+---
+
+## Sampling-Based Batch Verification
+
+On top of the MMR batch anchoring above, `GET /verify-batch?batchId=&sampleSize=&rounds=`
+audits a batch statistically instead of checking every credential: each round samples
+`sampleSize` items **without replacement**, sample size **doubles each round** (exponential
+growth, clamped to batch size), and every sampled item is checked with the existing
+`verifyMMRInclusion` on-chain proof check — sampling decides *what* to check, it does not
+change *how* a single item is verified. This is additive to, not a replacement for, full
+per-credential verification (`/verify/:hash`, `/mmr/verify`).
+
+After `r` rounds, confidence is reported as `Lc = 1 - (1 - Pv)^r`. **Pv is not an assumed
+constant** — it is measured empirically by `evaluation/evaluate_mmr_sampling.js`, a Monte
+Carlo harness that seeds a batch with a known tampered item and measures how often the real
+sampling code (not a reimplementation) catches it. Current measured result:
+
+| Parameter | Value |
+|-----------|-------|
+| Batch size | 1,000 |
+| Tampered items seeded | 1 |
+| Base sample size / growth / rounds | 5, ×2, 5 |
+| Per-round sample sizes | 5, 10, 20, 40, 80 (15.5% of batch total) |
+| Monte Carlo trials | 20,000 |
+| Empirical 5-round catch rate | **0.1482** |
+| Backed-out per-round Pv | **0.0316** |
+
+Read plainly: at this batch size, a single tampered credential has roughly a **15% chance**
+of being caught by the default protocol. That's the honest, measured number, not a design
+target — raising `sampleSize`/`rounds` trades more per-item checks for higher confidence.
+Re-run the harness after changing those defaults; `api/mmr_sampling.js` documents how the
+constant is derived and where to update it.
+
+**Sampling vs. full verification** (measured locally, N=1,000 credential batch, defaults above):
+
+| | Full (`/mmr/verify` × N) | Sampling (`/verify-batch`, defaults) |
+|---|---|---|
+| Items checked | 1,000 | 155 |
+| Total proof payload | ~1,344,000 bytes | ~206,700 bytes |
+| Local proof gen + verify time | ~117 ms | ~18 ms |
+| Reduction | — | ~85% fewer checks, payload, and compute time |
+
+Per-proof size is ~1.3–1.4 KB regardless of which mode is used (proof size scales with
+`log(batch size)`, not with how many items are checked) — the savings come entirely from
+checking fewer items, not from cheaper individual proofs. These are local computation
+figures only; there's no live Fabric network in this environment to measure real
+transaction round-trip latency, which would dominate wall-clock time in a deployed system.
 
 ---
 
