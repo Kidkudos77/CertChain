@@ -610,9 +610,15 @@ Deterministic and rule-based, no ML. Wired additively into `/issue`, `/verify/:h
 nothing existing was changed. `viewerRole` (mapped from the session's RBAC role — `admin`
 maps to the deeper `auditor` view) controls depth: a `student` viewer gets a headline and
 any anomalies with no raw field dump, `institution`/`verifier`/`auditor` get the full field
-list. A fourth `requestType`, `pqc_signing`, is implemented and ready for FabricVault to
-call — but FabricVault's source isn't in this repository, so it isn't wired to import this
-module here.
+list. A fourth `requestType`, `pqc_signing`, covers credential-signing decisions and is now
+actually consumed: FabricVault (a separate repository, `Kidkudos77/FabricVault`) ported the
+same rules into its CertChain wallet popup as `packages/extension/src/lib/decision-interpreter.ts`
+and `chrome-extension/popup.js`'s inline copy — see that repo's `claude/cross-browser-fixes`
+branch. It gates a real "Sign a Credential" flow: pasting credential JSON and previewing it
+runs these exact rules, and the Sign button stays disabled until any flagged anomaly
+(sub-threshold eligibility score, missing credential hash) is explicitly acknowledged, or the
+text is re-previewed after editing. The two copies are manually kept in sync (FabricVault
+can't import this file across repos) — if the `pqc_signing` rules here change, update both.
 
 ---
 
