@@ -1,12 +1,15 @@
 'use strict';
 /**
- * CertChain — MORES Sidecar Client (Phase 7 scaffolding)
- * ===========================================================
- * Thin HTTP client for crypto/mores_service.py. Every call currently
- * resolves the sidecar's clean { ok:false, error: <stub notice> } / HTTP
- * 501 response — this module's job is the transport wiring, not the
- * cryptography. Swapping the sidecar's stub function bodies for real
- * MORES later requires no changes here.
+ * CertChain — MORES Sidecar Client (Phase 7 — cryptographic core implemented)
+ * ================================================================================
+ * Thin HTTP client for crypto/mores_service.py. KGen/Enc/TGen resolve
+ * synchronously (no pairings involved, fast). Cmp is async: cmp() kicks off
+ * the sidecar's background job and returns a jobId immediately; cmpStatus()
+ * polls it; cmpWait() is a convenience wrapper that polls on an interval
+ * until the job finishes — same uploadID+polling shape api/server.js
+ * already uses for transcript uploads. Do not call cmp() and assume the
+ * result is ready synchronously: a real comparison is minutes, not
+ * milliseconds, in pure-Python py_ecc (see mores_core.py's docstring).
  *
  * Same pattern as api/mmr_sampling.js calling into chaincode/mmr.js: one
  * client module, reused by anything in the Node side that needs to reach
@@ -18,13 +21,14 @@ const http = require('http');
 const MORES_HOST = process.env.MORES_HOST || '127.0.0.1';
 const MORES_PORT = parseInt(process.env.MORES_PORT || '5100', 10);
 
-function callMores(route, body) {
+function request(method, route, body, timeoutMs = 10000) {
     return new Promise((resolve, reject) => {
-        const payload = Buffer.from(JSON.stringify(body || {}));
+        const payload = body !== undefined ? Buffer.from(JSON.stringify(body || {})) : null;
+        const headers = payload
+            ? { 'Content-Type': 'application/json', 'Content-Length': payload.length }
+            : {};
         const req = http.request({
-            host: MORES_HOST, port: MORES_PORT, path: route, method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Content-Length': payload.length },
-            timeout: 10000,
+            host: MORES_HOST, port: MORES_PORT, path: route, method, headers, timeout: timeoutMs,
         }, (res) => {
             let data = '';
             res.on('data', chunk => { data += chunk; });
@@ -35,14 +39,37 @@ function callMores(route, body) {
         });
         req.on('error', (e) => reject(new Error(`MORES sidecar unreachable at ${MORES_HOST}:${MORES_PORT} (is crypto/mores_service.py running?): ${e.message}`)));
         req.on('timeout', () => { req.destroy(); reject(new Error('MORES sidecar request timed out.')); });
-        req.write(payload);
+        if (payload) req.write(payload);
         req.end();
     });
 }
 
-const kgen = ()        => callMores('/mores/kgen', {});
-const enc  = (msk, x)  => callMores('/mores/enc',  { msk, x });
-const tgen = (qk, y)   => callMores('/mores/tgen', { qk, y });
-const cmp  = (ctx, ty) => callMores('/mores/cmp',  { ctx, ty });
+const callMores = (route, body) => request('POST', route, body); // kept for /ore/status's existing diagnostic use
 
-module.exports = { kgen, enc, tgen, cmp, callMores };
+const health = ()             => request('POST', '/mores/health', {});
+const kgen = ()               => request('POST', '/mores/kgen', {});
+const enc  = (msk, x, n, lam) => request('POST', '/mores/enc',  { msk, x, n, lam });
+const tgen = (qk, y, n, lam)  => request('POST', '/mores/tgen', { qk, y, n, lam });
+const cmp  = (ctx, ty)        => request('POST', '/mores/cmp',  { ctx, ty });
+const cmpStatus = (jobId)     => request('GET',  `/mores/cmp/status/${encodeURIComponent(jobId)}`);
+
+// Polls cmpStatus until the job is done/errored or timeoutMs elapses.
+// Real comparisons take tens of seconds to several minutes depending on
+// bit-width (see mores_core.py) — callers doing this synchronously in an
+// HTTP request handler should use the async job pattern instead
+// (return jobId to the client, let the client poll GET /mores/cmp/status).
+async function cmpWait(ctx, ty, { pollIntervalMs = 2000, timeoutMs = 300000 } = {}) {
+    const start = await cmp(ctx, ty);
+    if (!start.body || !start.body.ok) return start;
+    const jobId = start.body.result.jobId;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        const poll = await cmpStatus(jobId);
+        const status = poll.body && poll.body.result && poll.body.result.status;
+        if (status === 'done' || status === 'error') return poll;
+        await new Promise(r => setTimeout(r, pollIntervalMs));
+    }
+    throw new Error(`MORES Cmp job ${jobId} did not finish within ${timeoutMs}ms.`);
+}
+
+module.exports = { health, kgen, enc, tgen, cmp, cmpStatus, cmpWait, callMores };

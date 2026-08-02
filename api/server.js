@@ -852,15 +852,22 @@ app.patch('/issues/:id', auth.requireAuth(['admin']), (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  ORE (MORES) — Phase 7 scaffolding, cryptographic core paused
-//  Diagnostic only: proves the Node → Python sidecar chain is wired
-//  (crypto/mores_service.py must be running separately). No range-query
-//  API is exposed here — that would imply a working feature that doesn't
-//  exist yet. Every response comes back as the sidecar's stub 501.
+//  ORE (MORES) — Phase 7: cryptographic core implemented, pending
+//  independent review (see crypto/mores_core.py). Diagnostic only: proves
+//  the Node → Python sidecar chain is wired (crypto/mores_service.py must
+//  be running separately). No range-query API is exposed here yet — that's
+//  a larger integration (async job plumbing into the credential/query
+//  flow) than this diagnostic route.
+//
+//  Uses the sidecar's /mores/health route, not kgen() — kgen() now
+//  generates a real usable (msk, qk) pair and returns the secret msk in
+//  its response. Calling it just to check "is the sidecar up" would leak
+//  a throwaway-but-real secret key on every status check; health() does
+//  the same liveness check with no cryptographic material involved.
 // ════════════════════════════════════════════════════════════════════════════
 app.get('/ore/status', auth.requireAuth(['admin']), async (_req, res) => {
     try {
-        const { status, body } = await mores.kgen();
+        const { status, body } = await mores.health();
         return res.json({ sidecarReachable: true, sidecarStatus: status, sidecarResponse: body });
     } catch (e) {
         return res.json({ sidecarReachable: false, error: safeError(e) });

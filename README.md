@@ -36,7 +36,7 @@
 - [Sampling-Based Batch Verification](#sampling-based-batch-verification)
 - [Issue Reporting](#issue-reporting)
 - [Explainability Layer](#explainability-layer)
-- [ORE Layer (Phase 7 — cryptographic core paused)](#ore-layer-phase-7--cryptographic-core-paused)
+- [ORE Layer (Phase 7 — cryptographic core implemented, pending independent review)](#ore-layer-phase-7--cryptographic-core-implemented-pending-independent-review)
 - [Kaggle Dataset](#kaggle-dataset)
 - [NRP Deployment](#nrp-deployment)
 - [Supervisor Customization](#supervisor-customization)
@@ -613,45 +613,85 @@ any anomalies with no raw field dump, `institution`/`verifier`/`auditor` get the
 list. A fourth `requestType`, `pqc_signing`, covers credential-signing decisions and is now
 actually consumed: FabricVault (a separate repository, `Kidkudos77/FabricVault`) ported the
 same rules into its CertChain wallet popup as `packages/extension/src/lib/decision-interpreter.ts`
-and `chrome-extension/popup.js`'s inline copy — see that repo's `claude/cross-browser-fixes`
-branch. It gates a real "Sign a Credential" flow: pasting credential JSON and previewing it
-runs these exact rules, and the Sign button stays disabled until any flagged anomaly
-(sub-threshold eligibility score, missing credential hash) is explicitly acknowledged, or the
-text is re-previewed after editing. The two copies are manually kept in sync (FabricVault
-can't import this file across repos) — if the `pqc_signing` rules here change, update both.
+and `chrome-extension/popup.js`'s inline copy — merged to `main` there. It gates a real
+"Sign a Credential" flow: pasting credential JSON and previewing it runs these exact rules,
+and the Sign button stays disabled until any flagged anomaly (sub-threshold eligibility
+score, missing credential hash) is explicitly acknowledged, or the text is re-previewed
+after editing. The two copies are manually kept in sync (FabricVault can't import this file
+across repos) — if the `pqc_signing` rules here change, update both.
+
+**Correction**: building this signing flow surfaced that FabricVault's Dilithium3 sign/verify
+had never actually been round-trip tested before — `ml_dsa65.sign()`/`.verify()`'s arguments
+were in the wrong order in all four copies of that code (`lib/crypto.ts`, `background.ts`,
+and their compiled bundles), silently uncaught because nothing in the codebase called that
+path until this signing UI needed to. Any earlier statement that FabricVault's PQC signing
+was "confirmed working" meant key generation and `window.fabric` detection only, not a
+verified sign/verify round-trip — that verification didn't exist until this fix (now
+merged to `main`, verified via a Node-based DOM/`chrome` mock in the absence of a real
+browser in-session).
 
 ---
 
-## ORE Layer (Phase 7 — cryptographic core paused)
+## ORE Layer (Phase 7 — cryptographic core implemented, pending independent review)
 
-**The actual MORES/TIE cryptography (KeyGen, EncL, EncR, Dec, TGen, Cmp — the pairing
-equations) is not implemented.** That's deliberate: the scheme's entire value is a formal
-claim ("reveals only order, nothing else") that stops being true the moment anyone
-improvises the algebra from a signature-level description instead of the paper's actual
-Section IV equations. What's built is the scaffolding around that pause, so nothing
-downstream is blocked once a verified transcription lands:
+**The MORES/TIE cryptography (KeyGen, EncL, EncR, Dec, TGen, Cmp — the actual pairing
+equations) is now implemented**, transcribed directly from Hahn's paper, Section IV, per
+a dedicated equation-verification pass (not improvised from a signature-level description
+— that was the explicit condition for unpausing this work).
 
-- `crypto/mores_service.py` — `KGen`/`Enc`/`TGen`/`Cmp` stubs, each raising
-  `NotImplementedError`, wrapped in a real HTTP sidecar (`python3 crypto/mores_service.py`)
-  that returns a clean `501` — never a raw traceback.
-- `crypto/mores_client.js` — Node-side HTTP client for the sidecar.
+- `crypto/tie.py` — the TIE (Testable Inner-product/Equality) primitive: `keygen`,
+  `enc_l`, `enc_r`, `dec`, built on `py_ecc`'s BLS12-381 pairings. The module docstring
+  works through the correctness algebra by hand (not just a transcription — an independent
+  derivation that `e(L_t,R0)/e(L_{N+1},R_{N+1}) == e(L0,R_u)` reduces to `H(k1,m_t) ==
+  H(k1,m'_u)`, matching the paper's own correctness claim).
+- `crypto/mores_core.py` — MORES (`keygen`, `enc`, `tgen`, `cmp`) built on top of TIE via
+  digit-decomposition ORE, exactly as specified. Documents an honest discrepancy rather
+  than smoothing it over: this implementation's `Dec` costs `2n+3` pairings, not the
+  paper's stated `(n+2)` — the transcription didn't include Table I's cost-derivation
+  section, so there may be a batching optimization this implementation doesn't capture.
+  Correctness was verified independently (the algebra above, plus known-answer tests);
+  the exact pairing count was not.
+- `crypto/mores_serialize.py` — JSON encode/decode for `py_ecc` curve points and Zp
+  scalars, so key/ciphertext material can cross the HTTP sidecar boundary.
+- `crypto/tie_selftest.py` / `crypto/mores_selftest.py` — known-answer correctness tests
+  (`python3 crypto/mores_selftest.py`): equal, less-than, and greater-than cases, including
+  edge cases (values differing only in their least-significant bit, zero/max boundaries).
+  Building these caught a real bug before it shipped: an earlier version defaulted the
+  `2^λ` masking modulus to `2^n` (tied to the plaintext bit-width) instead of a large,
+  n-independent security parameter, which produced an actual wrong `Cmp` result at small
+  n due to accidental collisions. Fixed (`DEFAULT_LAMBDA = 128`) and re-verified.
+- `crypto/mores_service.py` — the HTTP sidecar now runs real `KGen`/`Enc`/`TGen` (fast, no
+  pairings) synchronously, and `Cmp` as an async job (`POST /mores/cmp` returns a `jobId`
+  immediately; `GET /mores/cmp/status/:jobId` polls it) — required by the pairing-latency
+  finding below, not optional. A separate `/mores/health` route was added after noticing
+  that reusing `KGen()` as a bare connectivity check (its previous use) would now generate
+  a real usable keypair and leak the secret `msk` in the response on every status check.
+- `crypto/mores_client.js` — Node-side HTTP client, including `cmpWait()` for polling a
+  `Cmp` job to completion.
 - `crypto/mores_keys.py` — key storage/distribution plumbing (institution `msk`, verifier
   `qk`), piggybacking on the wallet's existing local storage location
-  (`wallet/store/mores/`) rather than a new secure channel.
-- `storage/ipfs_storage.js`'s `storeDocumentWithMORES()` — the identified integration
-  point where a GPA/score field would get MORES-encrypted before hashing, additive next to
-  the untouched `storeDocument()`.
+  (`wallet/store/mores/`). Fixed a real integration bug caught while wiring this to the
+  now-real `KGen()`: it previously did `msk, qk = KGen()`, which — now that `KGen()`
+  returns `{msk, qk}` — would have silently unpacked the dict's key *strings* instead of
+  their values. Verified end-to-end (`issue_institution_keys` → `distribute_qk` →
+  `load_msk`/`load_qk`) after the fix.
 - `GET /ore/status` (admin) — diagnostic proving the full chain (API → Node client →
-  Python sidecar) is wired; confirms the sidecar is reachable and returns its stub notice.
+  Python sidecar) is wired; now calls `/mores/health`, confirmed to leak no key material.
+
+**Still pending before this protects real FERPA data**: an independent read-through by
+someone with cryptographic background, beyond this transcription and its own algebra/test
+verification — a single transcription isn't the same guarantee as formal peer review. Every
+module above says so in its own docstring; this isn't a footnote to skip.
 
 **Performance finding, confirmed empirically** (`py_ecc`, BLS12-381, this environment):
-each pairing computation takes ~3.5 seconds, pure Python with no native acceleration. The
-paper's own comparison cost is `(n+2)` pairings for an `n`-bit encoded value — a 9-bit GPA
-encoding is ~11 pairings (~38s); a generic 64-bit encoding is ~230s. Neither is viable
-synchronously. Whoever does the cryptographic transcription pass should design `Cmp` as an
-async job (uploadID + polling, same pattern as transcript upload) from the start, and
-budget for either a minimal bit-width encoding or a natively-accelerated pairing backend
-(e.g. `mcl`'s Python bindings) before this is production-viable.
+each pairing computation takes ~3.5 seconds, pure Python with no native acceleration. At
+this implementation's measured `2n+3` pairings per `Cmp`, a 9-bit GPA encoding is `2(9)+3
+= 21` pairings (~74s); a generic 64-bit encoding is `131` pairings (~460s). Neither is
+viable synchronously — which is exactly why `Cmp` is wired as an async job above, not a
+request/response call. Before this is production-viable: pick a minimal bit-width encoding
+(9–12 bits is likely enough for a 0.00–4.00 GPA scale) and/or replace `py_ecc` with a
+natively-accelerated pairing backend (e.g. `mcl`'s Python bindings) once the algorithm
+itself has cleared independent review — swap the backend, not the verified design.
 
 ---
 

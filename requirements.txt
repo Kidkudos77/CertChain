@@ -10,6 +10,11 @@ numpy>=1.24.0
 # Post-Quantum Cryptography
 dilithium-py>=0.2.0
 
+# MORES/TIE (Phase 7) — BLS12-381 pairings for the ORE layer's
+# cryptographic core. Pure Python, no native acceleration — see
+# crypto/mores_core.py for the resulting per-comparison latency.
+py_ecc>=8.0.0
+
 # Pipeline & API
 requests>=2.31.0
 

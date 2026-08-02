@@ -42,11 +42,16 @@ def issue_institution_keys(institution_id):
     """Run KGen() for an institution, store its msk locally, and return
     the qk half so it can be distributed to verifiers.
 
-    Fails loudly (NotImplementedError propagates from KGen) until the
-    cryptographic core lands — this function's job is the storage and
-    distribution workflow, not KGen itself.
+    KGen() (crypto/mores_service.py) returns {'msk': ..., 'qk': ...} —
+    both halves already JSON-serialized (see crypto/mores_serialize.py),
+    not a raw (msk, qk) tuple. An earlier version of this function did
+    `msk, qk = KGen()`, which would have silently unpacked the dict's KEY
+    STRINGS ('msk', 'qk') instead of their values — a bug that was never
+    caught while KGen() was a stub raising NotImplementedError before any
+    unpacking happened. Caught here once KGen() actually returned data.
     """
-    msk, qk = KGen()
+    keys = KGen()
+    msk, qk = keys['msk'], keys['qk']
     _ensure_store_dir()
     with open(_path_for('msk', institution_id), 'w') as f:
         json.dump({'institutionId': institution_id, 'msk': msk}, f)
