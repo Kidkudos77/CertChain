@@ -33,6 +33,9 @@
 - [Usage](#usage)
 - [Evaluation](#evaluation)
 - [Sampling-Based Batch Verification](#sampling-based-batch-verification)
+- [Issue Reporting](#issue-reporting)
+- [Explainability Layer](#explainability-layer)
+- [ORE Layer (Phase 7 — cryptographic core paused)](#ore-layer-phase-7--cryptographic-core-paused)
 - [Kaggle Dataset](#kaggle-dataset)
 - [NRP Deployment](#nrp-deployment)
 - [Supervisor Customization](#supervisor-customization)
@@ -166,12 +169,22 @@ certchain/
 │
 ├── storage/
 │   └── ipfs_storage.js            # IPFS off-chain document storage
+│                                  # (storeDocumentWithMORES: Phase 7 integration point)
+│
+├── crypto/
+│   ├── mores_service.py           # MORES/TIE stub HTTP sidecar — crypto core PAUSED
+│   ├── mores_client.js            # Node-side client for the sidecar
+│   └── mores_keys.py              # msk/qk storage + distribution plumbing
+│
+├── explain/
+│   └── decision-interpreter.js    # Shared explainability layer (Phase 8, SSD-derived)
 │
 ├── api/
 │   ├── server.js                  # REST API with JSON-LD credential endpoints
-│   └── mmr_sampling.js            # Sampling audit: sampler, confidence formula,
-│                                  # round-loop orchestrator (shared with the
-│                                  # evaluation harness below)
+│   ├── mmr_sampling.js            # Sampling audit: sampler, confidence formula,
+│   │                              # round-loop orchestrator (shared with the
+│   │                              # evaluation harness below)
+│   └── issues.js                  # Issue-reporting flat JSON log
 │
 ├── dataset/
 │   └── data_loader.py             # Synthetic dataset generator + Kaggle drop-in
@@ -394,6 +407,10 @@ distinguishing title keywords (e.g. "Digital Forensics") directly — see
 | `GET`  | `/mmr/proof/:batchId/:credHash` | any | Get an inclusion proof for one credential |
 | `POST` | `/mmr/verify` | any | Verify an inclusion proof against the anchored root |
 | `GET`  | `/verify-batch?batchId=&sampleSize=&rounds=` | any | Statistical sampling audit of a batch (see below) |
+| `POST` | `/report-issue` | any | Flag that CertChain itself isn't working — bug report, not credential feedback |
+| `GET`  | `/issues` | admin | View submitted issue reports |
+| `PATCH` | `/issues/:id` | admin | Mark a report resolved/in-progress |
+| `GET`  | `/ore/status` | admin | Diagnostic: is the MORES sidecar (`crypto/mores_service.py`) reachable — see Phase 7 note below |
 
 ### Example — Verify a Credential
 
@@ -496,6 +513,66 @@ Per-proof size is ~1.3–1.4 KB regardless of which mode is used (proof size sca
 checking fewer items, not from cheaper individual proofs. These are local computation
 figures only; there's no live Fabric network in this environment to measure real
 transaction round-trip latency, which would dominate wall-clock time in a deployed system.
+
+---
+
+## Issue Reporting
+
+`POST /report-issue` lets any authenticated role flag that CertChain itself isn't working —
+a bug/support-ticket path, not feedback on a credential's contents. No blockchain
+involvement and no new RBAC role: `api/issues.js` is a flat, atomically-written JSON log
+(`api/issues.json`, created on first use), the same pattern `api/auth.js` already uses for
+`users.json`. Admins list (`GET /issues`) and update status (`PATCH /issues/:id`,
+`open`/`in-progress`/`resolved`).
+
+---
+
+## Explainability Layer
+
+`explain/decision-interpreter.js` is a single shared module — not a per-feature
+reimplementation — that turns a raw response into a plain-language, risk-flagged summary:
+`parseRequest(rawPayload, requestType) → interpret(parsedFields) → summarize(interpretation, viewerRole)`.
+Deterministic and rule-based, no ML. Wired additively into `/issue`, `/verify/:hash`, and
+`/verify-batch` — each response gains an `explanation` field alongside its existing fields;
+nothing existing was changed. `viewerRole` (mapped from the session's RBAC role — `admin`
+maps to the deeper `auditor` view) controls depth: a `student` viewer gets a headline and
+any anomalies with no raw field dump, `institution`/`verifier`/`auditor` get the full field
+list. A fourth `requestType`, `pqc_signing`, is implemented and ready for FabricVault to
+call — but FabricVault's source isn't in this repository, so it isn't wired to import this
+module here.
+
+---
+
+## ORE Layer (Phase 7 — cryptographic core paused)
+
+**The actual MORES/TIE cryptography (KeyGen, EncL, EncR, Dec, TGen, Cmp — the pairing
+equations) is not implemented.** That's deliberate: the scheme's entire value is a formal
+claim ("reveals only order, nothing else") that stops being true the moment anyone
+improvises the algebra from a signature-level description instead of the paper's actual
+Section IV equations. What's built is the scaffolding around that pause, so nothing
+downstream is blocked once a verified transcription lands:
+
+- `crypto/mores_service.py` — `KGen`/`Enc`/`TGen`/`Cmp` stubs, each raising
+  `NotImplementedError`, wrapped in a real HTTP sidecar (`python3 crypto/mores_service.py`)
+  that returns a clean `501` — never a raw traceback.
+- `crypto/mores_client.js` — Node-side HTTP client for the sidecar.
+- `crypto/mores_keys.py` — key storage/distribution plumbing (institution `msk`, verifier
+  `qk`), piggybacking on the wallet's existing local storage location
+  (`wallet/store/mores/`) rather than a new secure channel.
+- `storage/ipfs_storage.js`'s `storeDocumentWithMORES()` — the identified integration
+  point where a GPA/score field would get MORES-encrypted before hashing, additive next to
+  the untouched `storeDocument()`.
+- `GET /ore/status` (admin) — diagnostic proving the full chain (API → Node client →
+  Python sidecar) is wired; confirms the sidecar is reachable and returns its stub notice.
+
+**Performance finding, confirmed empirically** (`py_ecc`, BLS12-381, this environment):
+each pairing computation takes ~3.5 seconds, pure Python with no native acceleration. The
+paper's own comparison cost is `(n+2)` pairings for an `n`-bit encoded value — a 9-bit GPA
+encoding is ~11 pairings (~38s); a generic 64-bit encoding is ~230s. Neither is viable
+synchronously. Whoever does the cryptographic transcription pass should design `Cmp` as an
+async job (uploadID + polling, same pattern as transcript upload) from the start, and
+budget for either a minimal bit-width encoding or a natively-accelerated pairing backend
+(e.g. `mcl`'s Python bindings) before this is production-viable.
 
 ---
 

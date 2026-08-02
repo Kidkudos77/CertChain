@@ -31,6 +31,9 @@ const multer     = require('multer');
 const os         = require('os');
 const { execFile } = require('child_process');
 const { extractText } = require('./transcript_extract');
+const issues     = require('./issues');
+const mores      = require('../crypto/mores_client');
+const explain    = require('../explain/decision-interpreter');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -175,6 +178,25 @@ function validateStudentID(id) {
 
 function validateBatchId(id) {
     return typeof id === 'string' && BATCHID_PATTERN.test(id);
+}
+
+// Phase 8 explainability layer: this system's RBAC roles (admin, institution,
+// student, verifier) aren't quite explain/decision-interpreter.js's
+// viewerRole set (student, institution, verifier, auditor) — admin maps to
+// auditor (full-depth view), matching the existing pattern where admin-only
+// endpoints already see everything (getVerificationLog, getMismatchAlerts).
+function toViewerRole(sessionRole) {
+    return sessionRole === 'admin' ? 'auditor' : sessionRole;
+}
+
+// Never let an explanation failure break an otherwise-successful response —
+// this field is additive context, not load-bearing.
+function tryExplain(rawPayload, requestType, viewerRole) {
+    try {
+        return explain.summarize(explain.interpret(explain.parseRequest(rawPayload, requestType), requestType), viewerRole);
+    } catch (e) {
+        return null;
+    }
 }
 
 // nlpPayload schema validation — H4 fix
@@ -339,7 +361,8 @@ app.post('/issue', auth.requireAuth(['institution', 'admin']), async (req, res) 
             'issueMicroCredential', studentID, JSON.stringify(cleanPayload));
         await gateway.disconnect();
         const parsed = JSON.parse(result.toString());
-        return res.status(parsed.success ? 201 : 422).json(parsed);
+        const explanation = tryExplain(parsed, explain.REQUEST_TYPES.CREDENTIAL_ISSUANCE, toViewerRole(req.session.role));
+        return res.status(parsed.success ? 201 : 422).json(explanation ? { ...parsed, explanation } : parsed);
     } catch(e) {
         console.error({ id: req.id, route: '/issue', error: e.message });
         return res.status(500).json({ error: safeError(e) });  // C4 fix
@@ -481,8 +504,10 @@ app.get('/verify/:hash', auth.requireAuth(), async (req, res) => {
         const { contract, gateway } = await getContract(req.session.fabricID);
         const result = await contract.evaluateTransaction('verifyCredential', req.params.hash);
         await gateway.disconnect();
+        const parsed = JSON.parse(result.toString());
+        const explanation = tryExplain(parsed, explain.REQUEST_TYPES.CREDENTIAL_VERIFICATION, toViewerRole(req.session.role));
         res.setHeader('Content-Type', 'application/ld+json');
-        return res.json(JSON.parse(result.toString()));
+        return res.json(explanation ? { ...parsed, explanation } : parsed);
     } catch(e) {
         console.error({ id: req.id, route: '/verify', error: e.message });
         return res.status(500).json({ error: safeError(e) });
@@ -730,7 +755,7 @@ app.get('/verify-batch', auth.requireAuth(), async (req, res) => {
 
         const confidenceLevel = sampling.computeConfidence(sampling.DEFAULT_PV, roundsRun);
 
-        return res.json({
+        const responseBody = {
             confidenceLevel,
             roundsRun,
             itemsChecked,
@@ -741,7 +766,9 @@ app.get('/verify-batch', auth.requireAuth(), async (req, res) => {
             perRound,
             pv:           sampling.DEFAULT_PV,
             pvProvenance: sampling.DEFAULT_PV_PROVENANCE,
-        });
+        };
+        const explanation = tryExplain(responseBody, explain.REQUEST_TYPES.MMR_BATCH_VERIFICATION, toViewerRole(req.session.role));
+        return res.json(explanation ? { ...responseBody, explanation } : responseBody);
     } catch(e) {
         console.error({ id: req.id, route: '/verify-batch', error: e.message });
         return res.status(500).json({ error: safeError(e) });
@@ -776,6 +803,67 @@ app.get('/admin/verify-log', auth.requireAuth(['admin', 'institution']), async (
     } catch(e) {
         console.error({ id: req.id, route: '/admin/verify-log', error: e.message });
         return res.json({ count: 0, entries: [], alerts: 0, note: 'Chaincode upgrade pending' });
+    }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  ISSUE REPORTING — flag that CertChain itself isn't working correctly.
+//  Not credential feedback: no MMR, no blockchain, no new RBAC role. A flat
+//  JSON log is genuinely appropriate here (support tickets, not credentials).
+// ════════════════════════════════════════════════════════════════════════════
+
+// POST /report-issue — any authenticated role
+app.post('/report-issue', auth.requireAuth(), (req, res) => {
+    const description = auth.sanitizeStr((req.body || {}).description || '', 2000);
+    if (!description || description.length < 5)
+        return res.status(400).json({ error: 'description is required (min 5 characters).' });
+
+    const credentialIdRaw = (req.body || {}).credentialId;
+    let credentialId = null;
+    if (credentialIdRaw) {
+        if (!validateHash(credentialIdRaw))
+            return res.status(400).json({ error: 'credentialId, if provided, must be a valid credential hash.' });
+        credentialId = credentialIdRaw;
+    }
+
+    const issue = issues.createIssue({
+        reporterID:   req.session.userID,
+        reporterRole: req.session.role,
+        description,
+        credentialId,
+    });
+    return res.status(201).json({ ok: true, issue });
+});
+
+// GET /issues — admin only
+app.get('/issues', auth.requireAuth(['admin']), (_req, res) => {
+    return res.json({ issues: issues.listIssues() });
+});
+
+// PATCH /issues/:id — admin only
+app.patch('/issues/:id', auth.requireAuth(['admin']), (req, res) => {
+    const status = (req.body || {}).status;
+    const result = issues.updateIssueStatus(req.params.id, status);
+    if (!result.ok) {
+        const code = result.error === 'Issue not found.' ? 404 : 400;
+        return res.status(code).json({ error: result.error });
+    }
+    return res.json({ ok: true, issue: result.issue });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  ORE (MORES) — Phase 7 scaffolding, cryptographic core paused
+//  Diagnostic only: proves the Node → Python sidecar chain is wired
+//  (crypto/mores_service.py must be running separately). No range-query
+//  API is exposed here — that would imply a working feature that doesn't
+//  exist yet. Every response comes back as the sidecar's stub 501.
+// ════════════════════════════════════════════════════════════════════════════
+app.get('/ore/status', auth.requireAuth(['admin']), async (_req, res) => {
+    try {
+        const { status, body } = await mores.kgen();
+        return res.json({ sidecarReachable: true, sidecarStatus: status, sidecarResponse: body });
+    } catch (e) {
+        return res.json({ sidecarReachable: false, error: safeError(e) });
     }
 });
 
