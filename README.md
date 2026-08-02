@@ -208,6 +208,7 @@ certchain/
 | Node.js | 18+ | Chaincode, API, wallet |
 | Docker | 24+ | Hyperledger Fabric containers |
 | Go | 1.21+ | Fabric peer tools |
+| poppler-utils | any | `pdftoppm` — OCR fallback for scanned transcript PDFs (optional; without it, scanned PDFs with no text layer fail with a clear error instead of silently producing empty text) |
 | Git | any | Version control |
 
 ---
@@ -231,7 +232,9 @@ pip3 install -r requirements.txt
 
 ```bash
 cd chaincode  && npm install fabric-contract-api fabric-shim
-cd ../api     && npm install express body-parser fabric-network fabric-ca-client
+cd ../api     && npm install express body-parser fabric-network fabric-ca-client \
+                       helmet express-rate-limit cors bcryptjs \
+                       multer pdf-parse mammoth tesseract.js
 cd ../wallet  && npm install fabric-network fabric-ca-client
 cd ../storage && npm install ipfs-http-client
 cd ..
@@ -331,6 +334,43 @@ python3 integration/mmr_anchor.py --since 2026-07-30T00:00:00Z
 python3 integration/mmr_anchor.py --verify <credHash>
 ```
 
+### 8. Upload a Transcript File
+
+Instead of running `pipeline.py` against a local text file, an institution can
+upload a PDF/DOCX/TXT transcript directly. Text extraction happens in Node
+(`api/transcript_extract.js`); scanned PDFs with no text layer fall back to
+OCR via `pdftoppm` + `tesseract.js`. Processing runs asynchronously — extraction
+plus a Python subprocess (which may load a BERT model) is not fast enough to
+hold an HTTP request open for, so the response is an `uploadID` to poll:
+
+```bash
+curl -X POST http://localhost:3000/transcripts/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "studentID=FAMU10001" \
+  -F "transcript=@transcript.pdf"
+# {"uploadID": "...", "status": "processing"}
+
+curl http://localhost:3000/transcripts/status/<uploadID> \
+  -H "Authorization: Bearer $TOKEN"
+# {"uploadID": "...", "status": "complete", "result": { ... }}
+```
+
+`status` on the job record means "finished running," not "credential issued" —
+check `result.status` (`ISSUED`, `NOT_ELIGIBLE`, `MANUAL_REVIEW`, `REJECTED`, or
+`API_UNAVAILABLE`) for the actual outcome. A malformed file, empty extraction,
+or oversized upload always surfaces as an explicit error on the job or an
+immediate 4xx — never a silently-dropped upload.
+
+**Known limitation surfaced while building this**: without a trained BERT
+model, `nlp/transcript_parser.py` falls back to a regex parser that extracts
+`NSA####`-style codes, but `api/server.js`'s course-code allowlist only
+accepts `CIS`/`CNT`/`COP`-prefixed codes — so in a fresh environment with no
+trained model, both this upload path and the pre-existing
+`pipeline.py --transcript` CLI path will reject every transcript with
+`Invalid course code`. This predates the upload feature; it isn't introduced
+by it. Train a BERT model (whose predictions map to the correct codes) or
+reconcile the two code formats before relying on this in a demo without one.
+
 ---
 
 ## API Reference
@@ -339,6 +379,8 @@ python3 integration/mmr_anchor.py --verify <credHash>
 |--------|----------|------|-------------|
 | `GET`  | `/health` | None | Health check |
 | `POST` | `/issue` | institution | Issue credential from NLP payload |
+| `POST` | `/transcripts/upload` | institution | Upload PDF/DOCX/TXT transcript — extracts text, runs it through the full pipeline asynchronously |
+| `GET`  | `/transcripts/status/:uploadID` | institution | Poll an upload's processing status/result |
 | `GET`  | `/verify/:hash` | verifier | Verify credential — returns JSON-LD |
 | `GET`  | `/student/:id` | student | All credentials for a student |
 | `POST` | `/revoke` | institution | Revoke a credential |
