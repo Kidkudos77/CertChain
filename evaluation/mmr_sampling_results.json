@@ -1,0 +1,24 @@
+{
+  "config": {
+    "batchSize": 1000,
+    "tamperedCount": 1,
+    "baseSampleSize": 5,
+    "rounds": 5,
+    "growthFactor": 2,
+    "trials": 20000
+  },
+  "perRoundSampleSizes": [
+    5,
+    10,
+    20,
+    40,
+    80
+  ],
+  "totalSampledPerRun": 155,
+  "sampledFractionOfBatch": 0.155,
+  "avgItemsChecked": 155,
+  "lcEmpirical": 0.14825,
+  "pvEffective": 0.03158294687781982,
+  "theoreticalRound1Pv": 0.005,
+  "lcFromEffectivePv": 0.14825
+}

@@ -15,7 +15,7 @@ Run evaluation:     python evaluation/evaluate_nlp.py
 
 Usage:
   python nlp/bert_classifier.py --train --data dataset/output/sentence_labels.json
-  python nlp/bert_classifier.py --test "NSA4030 Digital Forensics Grade A" --model nlp/model
+  python nlp/bert_classifier.py --test "CIS4385C Digital Forensics Grade A" --model nlp/model
 """
 
 import json, os, argparse

@@ -1,0 +1,34 @@
+{
+  "batchSize": 1000,
+  "schemeA": {
+    "name": "1:1 hash-pointer (verifyCredential)",
+    "itemsChecked": 1000,
+    "ledgerReads": 1000,
+    "totalResponseBytes": 599136,
+    "avgResponseBytes": 599
+  },
+  "schemeB": {
+    "name": "MMR full inclusion-proof verification",
+    "itemsChecked": 1000,
+    "ledgerWrites": 1,
+    "ledgerReads": 1,
+    "allProofsValid": true,
+    "buildMMRMs": 10.99,
+    "proofGenMs": 3.21,
+    "proofVerifyMs": 33.6,
+    "totalProofBytes": 1343750,
+    "avgProofBytes": 1344
+  },
+  "schemeC": {
+    "name": "MMR + sampling (api/mmr_sampling.js defaults)",
+    "itemsChecked": 155,
+    "itemsCheckedFraction": 0.155,
+    "ledgerWrites": 1,
+    "ledgerReads": 1,
+    "totalProofBytes": 206877,
+    "avgProofBytes": 1335,
+    "proofVerifyMs": 4.44,
+    "confidenceLevel": 0.1483,
+    "confidenceLevelProvenance": "computeConfidence(DEFAULT_PV=0.0316, rounds=5) — DEFAULT_PV itself is empirically measured, see evaluation/evaluate_mmr_sampling.js"
+  }
+}

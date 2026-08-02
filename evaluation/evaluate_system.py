@@ -8,7 +8,7 @@ import time, json, statistics, argparse, requests
 CALLER = 'famu-institution'
 SAMPLE = {
     'studentID':'FAMU10001','callerID':CALLER,
-    'nlpPayload':{'gpa':3.75,'courses_completed':['NSA3010','NSA4020','NSA4030'],
+    'nlpPayload':{'gpa':3.75,'courses_completed':['CIS4385C','CIS4360','CIS4361'],
                   'bert_confidence':0.91,'eligibility_score':0.77,'student_name':'Marcus Johnson'}
 }
 

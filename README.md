@@ -32,6 +32,11 @@
 - [Installation](#installation)
 - [Usage](#usage)
 - [Evaluation](#evaluation)
+- [Performance Benchmarking (Caliper)](#performance-benchmarking-caliper)
+- [Sampling-Based Batch Verification](#sampling-based-batch-verification)
+- [Issue Reporting](#issue-reporting)
+- [Explainability Layer](#explainability-layer)
+- [ORE Layer (Phase 7 — cryptographic core paused)](#ore-layer-phase-7--cryptographic-core-paused)
 - [Kaggle Dataset](#kaggle-dataset)
 - [NRP Deployment](#nrp-deployment)
 - [Supervisor Customization](#supervisor-customization)
@@ -68,6 +73,7 @@ not a replacement for, the existing per-credential verification.
 | 3 | Layer 3 | **System** | Hyperledger Fabric + IPFS + REST API + Kubernetes deployment on NRP | Latency (ms), Throughput (TPS) |
 | 4 | PQ Layer | **Novel Gap** | CRYSTALS-Dilithium3 post-quantum signatures on credential hashes | No reviewed micro-credentialing paper addresses this |
 | 5 | Integrity Layer | **Novel Gap** | Merkle Mountain Range batch anchoring — audits many credentials against one compact on-chain root, on top of the existing per-credential hash lookup | Proof size vs. batch size; on-chain inclusion-proof verification |
+| 6 | Sampling Layer | **Algorithm** | Round-based sampling audit over the MMR (without-replacement, exponential per-round growth) reusing the existing inclusion-proof check per sampled item | Empirically measured Pv via Monte Carlo (not assumed from source paper); items checked / payload / time vs. full verification |
 
 ---
 
@@ -164,9 +170,22 @@ certchain/
 │
 ├── storage/
 │   └── ipfs_storage.js            # IPFS off-chain document storage
+│                                  # (storeDocumentWithMORES: Phase 7 integration point)
+│
+├── crypto/
+│   ├── mores_service.py           # MORES/TIE stub HTTP sidecar — crypto core PAUSED
+│   ├── mores_client.js            # Node-side client for the sidecar
+│   └── mores_keys.py              # msk/qk storage + distribution plumbing
+│
+├── explain/
+│   └── decision-interpreter.js    # Shared explainability layer (Phase 8, SSD-derived)
 │
 ├── api/
-│   └── server.js                  # REST API with JSON-LD credential endpoints
+│   ├── server.js                  # REST API with JSON-LD credential endpoints
+│   ├── mmr_sampling.js            # Sampling audit: sampler, confidence formula,
+│   │                              # round-loop orchestrator (shared with the
+│   │                              # evaluation harness below)
+│   └── issues.js                  # Issue-reporting flat JSON log
 │
 ├── dataset/
 │   └── data_loader.py             # Synthetic dataset generator + Kaggle drop-in
@@ -174,12 +193,20 @@ certchain/
 ├── evaluation/
 │   ├── evaluate_nlp.py            # Layer 1: BERT vs. regex baseline
 │   ├── evaluate_scoring.py        # Layer 2: weighted vs. binary threshold
-│   └── evaluate_system.py         # Layer 3: latency and throughput
+│   ├── evaluate_system.py         # Layer 3: latency and throughput
+│   └── evaluate_mmr_sampling.js   # Layer 5: empirically measures Pv via
+│                                  # Monte Carlo simulation
 │
 ├── integration/
 │   ├── pipeline.py                # End-to-end pipeline (all layers + PQ)
 │   └── mmr_anchor.py              # Batch-selects + anchors an MMR root; can
 │                                  # round-trip an inclusion proof as a smoke test
+│
+├── benchmarks/
+│   └── caliper/                   # Hyperledger Caliper workspace (Phase 4)
+│       ├── networks/certchain-network.yaml
+│       ├── benchconfig.yaml       # issueCredential/verifyCredential rounds, 50-500 tx
+│       └── workloads/             # issueCredential.js, verifyCredential.js
 │
 ├── k8s/
 │   └── nrp-deployment.yaml        # Kubernetes manifests for NRP deployment
@@ -201,6 +228,7 @@ certchain/
 | Node.js | 18+ | Chaincode, API, wallet |
 | Docker | 24+ | Hyperledger Fabric containers |
 | Go | 1.21+ | Fabric peer tools |
+| poppler-utils | any | `pdftoppm` — OCR fallback for scanned transcript PDFs (optional; without it, scanned PDFs with no text layer fail with a clear error instead of silently producing empty text) |
 | Git | any | Version control |
 
 ---
@@ -224,7 +252,9 @@ pip3 install -r requirements.txt
 
 ```bash
 cd chaincode  && npm install fabric-contract-api fabric-shim
-cd ../api     && npm install express body-parser fabric-network fabric-ca-client
+cd ../api     && npm install express body-parser fabric-network fabric-ca-client \
+                       helmet express-rate-limit cors bcryptjs \
+                       multer pdf-parse mammoth tesseract.js
 cd ../wallet  && npm install fabric-network fabric-ca-client
 cd ../storage && npm install ipfs-http-client
 cd ..
@@ -324,6 +354,45 @@ python3 integration/mmr_anchor.py --since 2026-07-30T00:00:00Z
 python3 integration/mmr_anchor.py --verify <credHash>
 ```
 
+### 8. Upload a Transcript File
+
+Instead of running `pipeline.py` against a local text file, an institution can
+upload a PDF/DOCX/TXT transcript directly. Text extraction happens in Node
+(`api/transcript_extract.js`); scanned PDFs with no text layer fall back to
+OCR via `pdftoppm` + `tesseract.js`. Processing runs asynchronously — extraction
+plus a Python subprocess (which may load a BERT model) is not fast enough to
+hold an HTTP request open for, so the response is an `uploadID` to poll:
+
+```bash
+curl -X POST http://localhost:3000/transcripts/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "studentID=FAMU10001" \
+  -F "transcript=@transcript.pdf"
+# {"uploadID": "...", "status": "processing"}
+
+curl http://localhost:3000/transcripts/status/<uploadID> \
+  -H "Authorization: Bearer $TOKEN"
+# {"uploadID": "...", "status": "complete", "result": { ... }}
+```
+
+`status` on the job record means "finished running," not "credential issued" —
+check `result.status` (`ISSUED`, `NOT_ELIGIBLE`, `MANUAL_REVIEW`, `REJECTED`, or
+`API_UNAVAILABLE`) for the actual outcome. A malformed file, empty extraction,
+or oversized upload always surfaces as an explicit error on the job or an
+immediate 4xx — never a silently-dropped upload.
+
+**Course-code mismatch — resolved.** Without a trained BERT model,
+`nlp/transcript_parser.py` falls back to a regex parser. It previously
+extracted `NSA####`-style codes that `api/server.js`'s course-code allowlist
+(`CIS`/`CNT`/`COP`-prefixed) rejected outright, so neither this upload path
+nor the pre-existing `pipeline.py --transcript` CLI path could ever reach
+`ISSUED` in a fresh environment with no trained model. The fallback parser
+now matches the five official Cyber Defense Certificate course codes
+(formatting-tolerant: `CIS4385C` / `CIS 4385C` / `CIS-4385C`) or their
+distinguishing title keywords (e.g. "Digital Forensics") directly — see
+`COURSE_PATTERNS` in `nlp/transcript_parser.py`. The allowlist in
+`api/server.js` was not changed; it was already correct.
+
 ---
 
 ## API Reference
@@ -332,6 +401,8 @@ python3 integration/mmr_anchor.py --verify <credHash>
 |--------|----------|------|-------------|
 | `GET`  | `/health` | None | Health check |
 | `POST` | `/issue` | institution | Issue credential from NLP payload |
+| `POST` | `/transcripts/upload` | institution | Upload PDF/DOCX/TXT transcript — extracts text, runs it through the full pipeline asynchronously |
+| `GET`  | `/transcripts/status/:uploadID` | institution | Poll an upload's processing status/result |
 | `GET`  | `/verify/:hash` | verifier | Verify credential — returns JSON-LD |
 | `GET`  | `/student/:id` | student | All credentials for a student |
 | `POST` | `/revoke` | institution | Revoke a credential |
@@ -342,6 +413,11 @@ python3 integration/mmr_anchor.py --verify <credHash>
 | `GET`  | `/mmr/batch/:batchId/members` | any | List a batch's credentials in leaf order |
 | `GET`  | `/mmr/proof/:batchId/:credHash` | any | Get an inclusion proof for one credential |
 | `POST` | `/mmr/verify` | any | Verify an inclusion proof against the anchored root |
+| `GET`  | `/verify-batch?batchId=&sampleSize=&rounds=` | any | Statistical sampling audit of a batch (see below) |
+| `POST` | `/report-issue` | any | Flag that CertChain itself isn't working — bug report, not credential feedback |
+| `GET`  | `/issues` | admin | View submitted issue reports |
+| `PATCH` | `/issues/:id` | admin | Mark a report resolved/in-progress |
+| `GET`  | `/ore/status` | admin | Diagnostic: is the MORES sidecar (`crypto/mores_service.py`) reachable — see Phase 7 note below |
 
 ### Example — Verify a Credential
 
@@ -359,7 +435,7 @@ curl http://localhost:3000/verify/abc123def456...
   "credentialCategory": "micro-credential",
   "recognizedBy": "famu.edu",
   "educationalProgram": "FAMU-FCCS",
-  "competencyRequired": ["NSA3010", "NSA4020", "NSA4030"],
+  "competencyRequired": ["CIS4385C", "CIS4360", "CIS4361"],
   "eligibilityScore": 0.84,
   "postQuantumSigned": true,
   "pqAlgorithm": "CRYSTALS-Dilithium3"
@@ -386,12 +462,196 @@ python3 evaluation/evaluate_scoring.py \
 python3 evaluation/evaluate_system.py \
   --api http://localhost:3000 \
   --n 50
+
+# Layer 5 — MMR sampling verification accuracy (Pv, empirically measured)
+node evaluation/evaluate_mmr_sampling.js
+
+# Layer 5 — 1:1 hash-pointer vs. MMR(+sampling), on the real synthetic dataset
+node evaluation/evaluate_hashpointer_vs_mmr.js
 ```
 
 Results are saved to:
 - `evaluation/nlp_results.json`
 - `evaluation/scoring_results.json`
 - `evaluation/system_results.json`
+- `evaluation/mmr_sampling_results.json`
+- `evaluation/hashpointer_vs_mmr_results.json`
+
+---
+
+## Performance Benchmarking (Caliper)
+
+`benchmarks/caliper/` is a [Hyperledger Caliper](https://hyperledger.github.io/caliper/)
+workspace for the Phase 4 evaluation table: throughput and latency for
+`issueMicroCredential` (write path) and `verifyCredential` (read path) across a 50-500
+transaction range, at 2 concurrent worker clients (matching the "2 HEI nodes" framing).
+It reuses the same `config/connection.json` connection profile and `wallet/store`
+file-system wallet as the rest of CertChain, so no separate identity setup is required —
+just run `start.sh` first so those identities exist.
+
+```bash
+cd benchmarks/caliper
+npm install
+npx caliper bind --caliper-bind-sut fabric:2.2   # one-time; pins fabric-network@2.2.20
+npm run validate     # dry-run — parses config, connects, sends no transactions
+npm run benchmark     # runs all rounds, writes reports/report.html
+```
+
+**Status: infrastructure only, not yet executed against a live network.** In this
+environment there is no running Fabric peer/orderer/CA, so no benchmark numbers exist yet.
+What has been verified: `npm install` succeeds, `caliper bind` correctly resolves and pins
+`fabric-network@2.2.20` (matching the SDK version used elsewhere in this repo), the network
+config parses, and the Fabric connector loads and correctly detects the installed SDK
+version — the dry run fails at identity-manager initialization only because `wallet/store/`
+doesn't exist in this sandbox, which is the expected, correct failure point absent a live
+network. See `benchmarks/caliper/README.md` for the full validation log and layout.
+
+---
+
+## Sampling-Based Batch Verification
+
+On top of the MMR batch anchoring above, `GET /verify-batch?batchId=&sampleSize=&rounds=`
+audits a batch statistically instead of checking every credential: each round samples
+`sampleSize` items **without replacement**, sample size **doubles each round** (exponential
+growth, clamped to batch size), and every sampled item is checked with the existing
+`verifyMMRInclusion` on-chain proof check — sampling decides *what* to check, it does not
+change *how* a single item is verified. This is additive to, not a replacement for, full
+per-credential verification (`/verify/:hash`, `/mmr/verify`).
+
+After `r` rounds, confidence is reported as `Lc = 1 - (1 - Pv)^r`. **Pv is not an assumed
+constant** — it is measured empirically by `evaluation/evaluate_mmr_sampling.js`, a Monte
+Carlo harness that seeds a batch with a known tampered item and measures how often the real
+sampling code (not a reimplementation) catches it. Current measured result:
+
+| Parameter | Value |
+|-----------|-------|
+| Batch size | 1,000 |
+| Tampered items seeded | 1 |
+| Base sample size / growth / rounds | 5, ×2, 5 |
+| Per-round sample sizes | 5, 10, 20, 40, 80 (15.5% of batch total) |
+| Monte Carlo trials | 20,000 |
+| Empirical 5-round catch rate | **0.1482** |
+| Backed-out per-round Pv | **0.0316** |
+
+Read plainly: at this batch size, a single tampered credential has roughly a **15% chance**
+of being caught by the default protocol. That's the honest, measured number, not a design
+target — raising `sampleSize`/`rounds` trades more per-item checks for higher confidence.
+Re-run the harness after changing those defaults; `api/mmr_sampling.js` documents how the
+constant is derived and where to update it.
+
+**Sampling vs. full verification** (measured locally, N=1,000 credential batch, defaults above):
+
+| | Full (`/mmr/verify` × N) | Sampling (`/verify-batch`, defaults) |
+|---|---|---|
+| Items checked | 1,000 | 155 |
+| Total proof payload | ~1,344,000 bytes | ~206,700 bytes |
+| Local proof gen + verify time | ~117 ms | ~18 ms |
+| Reduction | — | ~85% fewer checks, payload, and compute time |
+
+Per-proof size is ~1.3–1.4 KB regardless of which mode is used (proof size scales with
+`log(batch size)`, not with how many items are checked) — the savings come entirely from
+checking fewer items, not from cheaper individual proofs. These are local computation
+figures only; there's no live Fabric network in this environment to measure real
+transaction round-trip latency, which would dominate wall-clock time in a deployed system.
+
+### 1:1 Hash-Pointer vs. MMR — Comparison on the Real Dataset
+
+`evaluation/evaluate_hashpointer_vs_mmr.js` compares the pre-MMR production scheme
+(`verifyCredential`: one ledger read keyed directly by `CRED~<hash>`, no proof object — the
+state key itself *is* the hash pointer) against the MMR layer, run on real synthetic
+transcript data (`dataset/data_loader.py`'s FCCS generator, not placeholder hashes) so
+credential sizes and hash inputs match what `issueMicroCredential` actually puts on the
+ledger. Run: `node evaluation/evaluate_hashpointer_vs_mmr.js [batchSize]`.
+
+Measured result, N=1,000 real dataset-derived credentials:
+
+| | 1:1 hash-pointer (`verifyCredential` × N) | MMR full (`/mmr/verify` × N) | MMR + sampling |
+|---|---|---|---|
+| Ledger reads (verification) | 1,000 | 1 (anchored root, reused for all N) | 1 |
+| Ledger writes (anchoring, on top of the N issuance writes both schemes already share) | 0 | 1 | 1 |
+| Items checked | 1,000 | 1,000 | 155 |
+| Total bytes transferred | 599,136 | 1,343,750 | 206,877 |
+| Avg bytes per item | 599 | 1,344 | 1,335 |
+
+Read plainly, this is **not** a one-sided win for MMR: per-item, an MMR inclusion proof is
+*larger* than the original scheme's response (log(N) sibling hashes add up to more than one
+compact credential record at N=1,000) — full MMR verification transfers **~124% more total
+bytes** than the original 1:1 scheme at this batch size. MMR's real advantage is structural,
+not per-item: **one anchoring write covers an entire batch** instead of the ledger absorbing
+a write per credential at verification-audit time, and it unlocks sampling — which *is* a
+real win, cutting bytes transferred by **~65.5%** versus the original scheme by checking only
+155 of 1,000 items (at the cost of the honestly-measured, low confidence level documented
+above — sampling trades coverage for cost, it does not get both for free). Also note: unlike
+the original scheme's response, an MMR proof does not carry the credential's human-readable
+fields (courses, score breakdown, IPFS CID, PQ signature) — it only proves hash membership in
+the anchored root, so a verifier still needs one supplementary off-chain fetch to display
+those fields either way.
+
+---
+
+## Issue Reporting
+
+`POST /report-issue` lets any authenticated role flag that CertChain itself isn't working —
+a bug/support-ticket path, not feedback on a credential's contents. No blockchain
+involvement and no new RBAC role: `api/issues.js` is a flat, atomically-written JSON log
+(`api/issues.json`, created on first use), the same pattern `api/auth.js` already uses for
+`users.json`. Admins list (`GET /issues`) and update status (`PATCH /issues/:id`,
+`open`/`in-progress`/`resolved`).
+
+---
+
+## Explainability Layer
+
+`explain/decision-interpreter.js` is a single shared module — not a per-feature
+reimplementation — that turns a raw response into a plain-language, risk-flagged summary:
+`parseRequest(rawPayload, requestType) → interpret(parsedFields) → summarize(interpretation, viewerRole)`.
+Deterministic and rule-based, no ML. Wired additively into `/issue`, `/verify/:hash`, and
+`/verify-batch` — each response gains an `explanation` field alongside its existing fields;
+nothing existing was changed. `viewerRole` (mapped from the session's RBAC role — `admin`
+maps to the deeper `auditor` view) controls depth: a `student` viewer gets a headline and
+any anomalies with no raw field dump, `institution`/`verifier`/`auditor` get the full field
+list. A fourth `requestType`, `pqc_signing`, covers credential-signing decisions and is now
+actually consumed: FabricVault (a separate repository, `Kidkudos77/FabricVault`) ported the
+same rules into its CertChain wallet popup as `packages/extension/src/lib/decision-interpreter.ts`
+and `chrome-extension/popup.js`'s inline copy — see that repo's `claude/cross-browser-fixes`
+branch. It gates a real "Sign a Credential" flow: pasting credential JSON and previewing it
+runs these exact rules, and the Sign button stays disabled until any flagged anomaly
+(sub-threshold eligibility score, missing credential hash) is explicitly acknowledged, or the
+text is re-previewed after editing. The two copies are manually kept in sync (FabricVault
+can't import this file across repos) — if the `pqc_signing` rules here change, update both.
+
+---
+
+## ORE Layer (Phase 7 — cryptographic core paused)
+
+**The actual MORES/TIE cryptography (KeyGen, EncL, EncR, Dec, TGen, Cmp — the pairing
+equations) is not implemented.** That's deliberate: the scheme's entire value is a formal
+claim ("reveals only order, nothing else") that stops being true the moment anyone
+improvises the algebra from a signature-level description instead of the paper's actual
+Section IV equations. What's built is the scaffolding around that pause, so nothing
+downstream is blocked once a verified transcription lands:
+
+- `crypto/mores_service.py` — `KGen`/`Enc`/`TGen`/`Cmp` stubs, each raising
+  `NotImplementedError`, wrapped in a real HTTP sidecar (`python3 crypto/mores_service.py`)
+  that returns a clean `501` — never a raw traceback.
+- `crypto/mores_client.js` — Node-side HTTP client for the sidecar.
+- `crypto/mores_keys.py` — key storage/distribution plumbing (institution `msk`, verifier
+  `qk`), piggybacking on the wallet's existing local storage location
+  (`wallet/store/mores/`) rather than a new secure channel.
+- `storage/ipfs_storage.js`'s `storeDocumentWithMORES()` — the identified integration
+  point where a GPA/score field would get MORES-encrypted before hashing, additive next to
+  the untouched `storeDocument()`.
+- `GET /ore/status` (admin) — diagnostic proving the full chain (API → Node client →
+  Python sidecar) is wired; confirms the sidecar is reachable and returns its stub notice.
+
+**Performance finding, confirmed empirically** (`py_ecc`, BLS12-381, this environment):
+each pairing computation takes ~3.5 seconds, pure Python with no native acceleration. The
+paper's own comparison cost is `(n+2)` pairings for an `n`-bit encoded value — a 9-bit GPA
+encoding is ~11 pairings (~38s); a generic 64-bit encoding is ~230s. Neither is viable
+synchronously. Whoever does the cryptographic transcription pass should design `Cmp` as an
+async job (uploadID + polling, same pattern as transcript upload) from the start, and
+budget for either a minimal bit-width encoding or a natively-accelerated pairing backend
+(e.g. `mcl`'s Python bindings) before this is production-viable.
 
 ---
 

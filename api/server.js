@@ -26,6 +26,14 @@ const path       = require('path');
 const auth       = require('./auth');
 const { getContract } = require('../wallet/wallet_setup');
 const mmr        = require('../chaincode/mmr');
+const sampling   = require('./mmr_sampling');
+const multer     = require('multer');
+const os         = require('os');
+const { execFile } = require('child_process');
+const { extractText } = require('./transcript_extract');
+const issues     = require('./issues');
+const mores      = require('../crypto/mores_client');
+const explain    = require('../explain/decision-interpreter');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -170,6 +178,25 @@ function validateStudentID(id) {
 
 function validateBatchId(id) {
     return typeof id === 'string' && BATCHID_PATTERN.test(id);
+}
+
+// Phase 8 explainability layer: this system's RBAC roles (admin, institution,
+// student, verifier) aren't quite explain/decision-interpreter.js's
+// viewerRole set (student, institution, verifier, auditor) — admin maps to
+// auditor (full-depth view), matching the existing pattern where admin-only
+// endpoints already see everything (getVerificationLog, getMismatchAlerts).
+function toViewerRole(sessionRole) {
+    return sessionRole === 'admin' ? 'auditor' : sessionRole;
+}
+
+// Never let an explanation failure break an otherwise-successful response —
+// this field is additive context, not load-bearing.
+function tryExplain(rawPayload, requestType, viewerRole) {
+    try {
+        return explain.summarize(explain.interpret(explain.parseRequest(rawPayload, requestType), requestType), viewerRole);
+    } catch (e) {
+        return null;
+    }
 }
 
 // nlpPayload schema validation — H4 fix
@@ -334,11 +361,138 @@ app.post('/issue', auth.requireAuth(['institution', 'admin']), async (req, res) 
             'issueMicroCredential', studentID, JSON.stringify(cleanPayload));
         await gateway.disconnect();
         const parsed = JSON.parse(result.toString());
-        return res.status(parsed.success ? 201 : 422).json(parsed);
+        const explanation = tryExplain(parsed, explain.REQUEST_TYPES.CREDENTIAL_ISSUANCE, toViewerRole(req.session.role));
+        return res.status(parsed.success ? 201 : 422).json(explanation ? { ...parsed, explanation } : parsed);
     } catch(e) {
         console.error({ id: req.id, route: '/issue', error: e.message });
         return res.status(500).json({ error: safeError(e) });  // C4 fix
     }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  TRANSCRIPT UPLOAD — extracts text from PDF/DOCX/TXT, hands it to the
+//  existing integration/pipeline.py --transcript path unchanged. Extraction
+//  lives entirely in Node (see transcript_extract.js); BERT parsing and
+//  scoring stay entirely in Python. Processing runs asynchronously — the
+//  Python subprocess spins up a fresh interpreter and may load a BERT
+//  model from disk, which is not reliably fast enough to hold an HTTP
+//  request open for. Poll GET /transcripts/status/:uploadID for the result.
+// ════════════════════════════════════════════════════════════════════════════
+const UPLOAD_DIR = path.join(os.tmpdir(), 'certchain-uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const ALLOWED_UPLOAD_MIME = new Set([
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain',
+]);
+const ALLOWED_UPLOAD_EXT = new Set(['.pdf', '.docx', '.txt']);
+
+const transcriptUpload = multer({
+    dest: UPLOAD_DIR,
+    limits: { fileSize: 10 * 1024 * 1024, files: 1 }, // 10MB — reject bigger uploads at the route level
+    fileFilter: (req, file, cb) => {
+        const ext = path.extname(file.originalname || '').toLowerCase();
+        if (!ALLOWED_UPLOAD_MIME.has(file.mimetype) && !ALLOWED_UPLOAD_EXT.has(ext)) {
+            return cb(new Error(`Unsupported file type: ${ext || file.mimetype}. Only PDF, DOCX, and TXT are accepted.`));
+        }
+        cb(null, true);
+    },
+});
+
+// In-memory job store — consistent with how api/auth.js keeps sessions
+// in-memory; this system has no database. Jobs are not persisted across
+// a server restart, which is an accepted limitation of this scale of
+// deployment (same as sessions).
+const uploadJobs = new Map(); // uploadID -> { status, result, error, createdAt }
+
+function cleanupFiles(paths) {
+    for (const p of paths) { fs.unlink(p, () => { /* best effort */ }); }
+}
+
+async function processUpload(uploadID, file, studentID, authToken) {
+    let text;
+    try {
+        const extracted = await extractText(file.path, file.mimetype, file.originalname);
+        text = extracted.text;
+    } catch (e) {
+        cleanupFiles([file.path]);
+        throw new Error(`Text extraction failed: ${e.message}`);
+    }
+
+    const tmpTextPath = file.path + '.txt';
+    const tmpOutPath  = file.path + '.result.json';
+    fs.writeFileSync(tmpTextPath, text, 'utf8');
+
+    try {
+        await new Promise((resolve, reject) => {
+            execFile('python3', [
+                path.join(__dirname, '..', 'integration', 'pipeline.py'),
+                '--transcript', tmpTextPath,
+                '--student', studentID,
+                '--output', tmpOutPath,
+            ], {
+                timeout: 120000, // 2 min — Python startup + possible BERT model load
+                // pipeline.py's own /issue call loops back into this same server —
+                // point it at the port we're actually listening on, not its
+                // http://localhost:3000 default, which only works by coincidence
+                // when PORT is left unset.
+                env: { ...process.env, CERTCHAIN_TOKEN: authToken, CERTCHAIN_API: `http://localhost:${PORT}` },
+            }, (err, stdout, stderr) => {
+                if (err) return reject(new Error(`pipeline.py failed: ${(stderr || err.message).slice(0, 500)}`));
+                resolve();
+            });
+        });
+
+        if (!fs.existsSync(tmpOutPath)) {
+            throw new Error('pipeline.py did not produce a result file.');
+        }
+        const result = JSON.parse(fs.readFileSync(tmpOutPath, 'utf8'));
+        uploadJobs.set(uploadID, { status: 'complete', result, createdAt: Date.now() });
+    } finally {
+        cleanupFiles([file.path, tmpTextPath, tmpOutPath]);
+    }
+}
+
+// POST /transcripts/upload — multipart field name: "transcript"; body also needs studentID
+app.post('/transcripts/upload', auth.requireAuth(['institution', 'admin']), (req, res) => {
+    transcriptUpload.single('transcript')(req, res, (err) => {
+        if (err instanceof multer.MulterError) {
+            if (err.code === 'LIMIT_FILE_SIZE')
+                return res.status(413).json({ error: 'File exceeds the 10MB limit.' });
+            return res.status(400).json({ error: err.message });
+        }
+        if (err) return res.status(415).json({ error: err.message }); // fileFilter rejection
+
+        if (!req.file)
+            return res.status(400).json({ error: 'No file uploaded (multipart field name must be "transcript").' });
+
+        const studentID = req.body.studentID;
+        if (!validateStudentID(studentID)) {
+            cleanupFiles([req.file.path]);
+            return res.status(400).json({ error: 'Invalid or missing studentID format.' });
+        }
+
+        const uploadID = crypto.randomBytes(16).toString('hex');
+        uploadJobs.set(uploadID, { status: 'processing', createdAt: Date.now() });
+        res.status(202).json({ uploadID, status: 'processing' });
+
+        // Processing continues after the response is sent — errors are
+        // recorded on the job, never silently dropped (H4/data-entry fix:
+        // a bad upload must surface as a failed status, not disappear).
+        const authToken = (req.headers.authorization || '').replace('Bearer ', '').trim();
+        processUpload(uploadID, req.file, studentID, authToken).catch((e) => {
+            console.error({ id: req.id, route: '/transcripts/upload', uploadID, error: e.message });
+            uploadJobs.set(uploadID, { status: 'failed', error: safeError(e), createdAt: Date.now() });
+        });
+    });
+});
+
+// GET /transcripts/status/:uploadID
+app.get('/transcripts/status/:uploadID', auth.requireAuth(['institution', 'admin']), (req, res) => {
+    const job = uploadJobs.get(req.params.uploadID);
+    if (!job) return res.status(404).json({ error: 'Unknown uploadID.' });
+    return res.json({ uploadID: req.params.uploadID, ...job });
 });
 
 // GET /verify/:hash
@@ -350,8 +504,10 @@ app.get('/verify/:hash', auth.requireAuth(), async (req, res) => {
         const { contract, gateway } = await getContract(req.session.fabricID);
         const result = await contract.evaluateTransaction('verifyCredential', req.params.hash);
         await gateway.disconnect();
+        const parsed = JSON.parse(result.toString());
+        const explanation = tryExplain(parsed, explain.REQUEST_TYPES.CREDENTIAL_VERIFICATION, toViewerRole(req.session.role));
         res.setHeader('Content-Type', 'application/ld+json');
-        return res.json(JSON.parse(result.toString()));
+        return res.json(explanation ? { ...parsed, explanation } : parsed);
     } catch(e) {
         console.error({ id: req.id, route: '/verify', error: e.message });
         return res.status(500).json({ error: safeError(e) });
@@ -551,6 +707,76 @@ app.post('/mmr/verify', auth.requireAuth(), async (req, res) => {
     }
 });
 
+// GET /verify-batch?batchId=X&sampleSize=M&rounds=r
+// IN ADDITION TO the full/per-credential path above (/mmr/verify), not a
+// replacement: samples M items per round (without replacement, exponential
+// growth across rounds — see api/mmr_sampling.js) instead of checking every
+// credential in the batch, and reuses the exact same on-chain
+// verifyMMRInclusion check per sampled item. Reports a statistical
+// confidence rather than a definitive yes/no over the whole batch.
+app.get('/verify-batch', auth.requireAuth(), async (req, res) => {
+    if (!validateBatchId(req.query.batchId))
+        return res.status(400).json({ error: 'Invalid batchId format.' });
+
+    const sampleSize = parseInt(req.query.sampleSize, 10) || sampling.DEFAULT_BASE_SAMPLE_SIZE;
+    const rounds      = parseInt(req.query.rounds, 10)     || sampling.DEFAULT_ROUNDS;
+    if (!Number.isInteger(sampleSize) || sampleSize < 1 || sampleSize > 200)
+        return res.status(400).json({ error: 'sampleSize must be an integer between 1 and 200.' });
+    if (!Number.isInteger(rounds) || rounds < 1 || rounds > 20)
+        return res.status(400).json({ error: 'rounds must be an integer between 1 and 20.' });
+
+    const batchId = req.query.batchId;
+    let contract, gateway;
+    try {
+        ({ contract, gateway } = await getContract(req.session.fabricID));
+
+        const membersResult = await contract.evaluateTransaction('getMMRBatchMembers', batchId);
+        const { credHashes } = JSON.parse(membersResult.toString());
+        if (!credHashes || credHashes.length === 0)
+            return res.status(404).json({ error: `Batch '${batchId}' not found or empty.` });
+
+        const built = mmr.buildMMR(credHashes);
+
+        const verifyOne = async (credHash) => {
+            const leafIndex = credHashes.indexOf(credHash);
+            const proof = mmr.generateProof(built, leafIndex);
+            const result = await contract.evaluateTransaction(
+                'verifyMMRInclusion', credHash, batchId, JSON.stringify(proof));
+            return JSON.parse(result.toString()).isValid === true;
+        };
+
+        const { roundsRun, itemsChecked, itemsFlagged, perRound } = await sampling.runSamplingRounds({
+            items: credHashes,
+            baseSampleSize: sampleSize,
+            rounds,
+            growthFactor: sampling.DEFAULT_GROWTH_FACTOR,
+            verifyOne,
+        });
+
+        const confidenceLevel = sampling.computeConfidence(sampling.DEFAULT_PV, roundsRun);
+
+        const responseBody = {
+            confidenceLevel,
+            roundsRun,
+            itemsChecked,
+            itemsFlagged,
+            batchId,
+            batchSize: credHashes.length,
+            sampleSize,
+            perRound,
+            pv:           sampling.DEFAULT_PV,
+            pvProvenance: sampling.DEFAULT_PV_PROVENANCE,
+        };
+        const explanation = tryExplain(responseBody, explain.REQUEST_TYPES.MMR_BATCH_VERIFICATION, toViewerRole(req.session.role));
+        return res.json(explanation ? { ...responseBody, explanation } : responseBody);
+    } catch(e) {
+        console.error({ id: req.id, route: '/verify-batch', error: e.message });
+        return res.status(500).json({ error: safeError(e) });
+    } finally {
+        if (gateway) await gateway.disconnect();
+    }
+});
+
 
 // GET /admin/verify-alerts — hash mismatch alerts (Item 3)
 app.get('/admin/verify-alerts', auth.requireAuth(['admin']), async (req, res) => {
@@ -577,6 +803,67 @@ app.get('/admin/verify-log', auth.requireAuth(['admin', 'institution']), async (
     } catch(e) {
         console.error({ id: req.id, route: '/admin/verify-log', error: e.message });
         return res.json({ count: 0, entries: [], alerts: 0, note: 'Chaincode upgrade pending' });
+    }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  ISSUE REPORTING — flag that CertChain itself isn't working correctly.
+//  Not credential feedback: no MMR, no blockchain, no new RBAC role. A flat
+//  JSON log is genuinely appropriate here (support tickets, not credentials).
+// ════════════════════════════════════════════════════════════════════════════
+
+// POST /report-issue — any authenticated role
+app.post('/report-issue', auth.requireAuth(), (req, res) => {
+    const description = auth.sanitizeStr((req.body || {}).description || '', 2000);
+    if (!description || description.length < 5)
+        return res.status(400).json({ error: 'description is required (min 5 characters).' });
+
+    const credentialIdRaw = (req.body || {}).credentialId;
+    let credentialId = null;
+    if (credentialIdRaw) {
+        if (!validateHash(credentialIdRaw))
+            return res.status(400).json({ error: 'credentialId, if provided, must be a valid credential hash.' });
+        credentialId = credentialIdRaw;
+    }
+
+    const issue = issues.createIssue({
+        reporterID:   req.session.userID,
+        reporterRole: req.session.role,
+        description,
+        credentialId,
+    });
+    return res.status(201).json({ ok: true, issue });
+});
+
+// GET /issues — admin only
+app.get('/issues', auth.requireAuth(['admin']), (_req, res) => {
+    return res.json({ issues: issues.listIssues() });
+});
+
+// PATCH /issues/:id — admin only
+app.patch('/issues/:id', auth.requireAuth(['admin']), (req, res) => {
+    const status = (req.body || {}).status;
+    const result = issues.updateIssueStatus(req.params.id, status);
+    if (!result.ok) {
+        const code = result.error === 'Issue not found.' ? 404 : 400;
+        return res.status(code).json({ error: result.error });
+    }
+    return res.json({ ok: true, issue: result.issue });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  ORE (MORES) — Phase 7 scaffolding, cryptographic core paused
+//  Diagnostic only: proves the Node → Python sidecar chain is wired
+//  (crypto/mores_service.py must be running separately). No range-query
+//  API is exposed here — that would imply a working feature that doesn't
+//  exist yet. Every response comes back as the sidecar's stub 501.
+// ════════════════════════════════════════════════════════════════════════════
+app.get('/ore/status', auth.requireAuth(['admin']), async (_req, res) => {
+    try {
+        const { status, body } = await mores.kgen();
+        return res.json({ sidecarReachable: true, sidecarStatus: status, sidecarResponse: body });
+    } catch (e) {
+        return res.json({ sidecarReachable: false, error: safeError(e) });
     }
 });
 

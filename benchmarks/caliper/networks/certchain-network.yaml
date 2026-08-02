@@ -1,0 +1,38 @@
+---
+# Hyperledger Caliper network configuration for CertChain.
+#
+# This reuses the same connection profile and file-system wallet that
+# wallet/wallet_setup.js and start.sh already produce, so no new identities
+# need to be enrolled just to benchmark. It targets the 'certchain' chaincode
+# on 'certchainchannel', the same names used everywhere else in this repo
+# (see start.sh and wallet/wallet_setup.js).
+#
+# The wallet identities referenced below (famu-institution, public-verifier,
+# FAMU10001) are created by start.sh's enrollment step. If you run this
+# against a fresh network, run start.sh (or wallet_setup.js directly) first
+# so wallet/store contains those identities before launching Caliper.
+name: CertChain
+version: "2.0.0"
+
+caliper:
+  blockchain: fabric
+
+channels:
+  - channelName: certchainchannel
+    contracts:
+      - id: certchain
+
+organizations:
+  - mspid: Org1MSP
+    identities:
+      wallet:
+        path: ../../wallet/store
+        adminNames:
+          - admin
+        users:
+          - name: famu-institution
+          - name: public-verifier
+          - name: FAMU10001
+    connectionProfile:
+      path: ../../config/connection.json
+      discover: false

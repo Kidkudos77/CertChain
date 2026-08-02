@@ -16,6 +16,19 @@ SCORE_THRESHOLD = 0.70
 MIN_GPA         = 3.0
 MIN_COURSES     = 3
 
+# Official Cyber Defense Certificate courses. Each entry matches either the
+# course code (formatting-tolerant: CIS4385C / CIS 4385C / CIS-4385C) or a
+# distinguishing title phrase, since a real transcript may list either.
+# These five codes must match api/server.js's VALID_COURSES allowlist
+# exactly — that allowlist is the source of truth and is not touched here.
+COURSE_PATTERNS = {
+    'CIS4385C': [r'\bCIS[\s-]?4385C\b', r'\bdigital\s+forensics\b'],
+    'CIS4360':  [r'\bCIS[\s-]?4360\b',  r'\bcomputer\s+security\b'],
+    'CIS4361':  [r'\bCIS[\s-]?4361\b',  r'\bapplied\s+security\b'],
+    'CNT4406':  [r'\bCNT[\s-]?4406\b',  r'\bnetwork\s+security\b'],
+    'COP3710':  [r'\bCOP[\s-]?3710\b',  r'\bdatabase\s+management\b'],
+}
+
 
 @dataclass
 class ParsedTranscript:
@@ -90,11 +103,17 @@ class TranscriptParser:
         return 0.0
 
     def _regex_courses(self, text):
-        """Fallback and baseline for evaluation comparison."""
+        """Fallback and baseline for evaluation comparison.
+        Matches the five official Cyber Defense Certificate course codes or
+        their distinguishing title keywords — see COURSE_PATTERNS.
+        """
         found = set()
-        for code in re.findall(r'\b(NSA\s?\d{4})\b', text, re.I):
-            found.add(code.replace(' ','').upper())
-        return sorted(list(found))
+        for code, patterns in COURSE_PATTERNS.items():
+            for pattern in patterns:
+                if re.search(pattern, text, re.I):
+                    found.add(code)
+                    break
+        return sorted(found)
 
     def _check(self, gpa, courses, score):
         if gpa < MIN_GPA:

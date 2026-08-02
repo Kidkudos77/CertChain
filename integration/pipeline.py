@@ -33,7 +33,12 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s | %(message)s')
 API_BASE   = os.getenv('CERTCHAIN_API',    'http://localhost:3000')
 CALLER_ID  = os.getenv('CERTCHAIN_CALLER', 'famu-institution')
 BERT_MODEL = os.getenv('BERT_MODEL_DIR',   'nlp/model')
+CERTCHAIN_TOKEN = os.getenv('CERTCHAIN_TOKEN')  # bearer token for /issue; see api/server.js /transcripts/upload
 MIN_CONF   = 0.60
+
+
+def _auth_headers() -> dict:
+    return {'Authorization': f'Bearer {CERTCHAIN_TOKEN}'} if CERTCHAIN_TOKEN else {}
 
 
 def process_one(transcript_text: str, student_id: str = None) -> dict:
@@ -64,7 +69,7 @@ def process_one(transcript_text: str, student_id: str = None) -> dict:
             'studentID':  parsed.student_id,
             'callerID':   CALLER_ID,
             'nlpPayload': payload,
-        }, timeout=30)
+        }, headers=_auth_headers(), timeout=30)
         result = r.json()
 
         if not (r.status_code == 201 and result.get('success')):
