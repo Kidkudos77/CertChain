@@ -32,6 +32,7 @@
 - [Installation](#installation)
 - [Usage](#usage)
 - [Evaluation](#evaluation)
+- [Performance Benchmarking (Caliper)](#performance-benchmarking-caliper)
 - [Sampling-Based Batch Verification](#sampling-based-batch-verification)
 - [Issue Reporting](#issue-reporting)
 - [Explainability Layer](#explainability-layer)
@@ -200,6 +201,12 @@ certchain/
 │   ├── pipeline.py                # End-to-end pipeline (all layers + PQ)
 │   └── mmr_anchor.py              # Batch-selects + anchors an MMR root; can
 │                                  # round-trip an inclusion proof as a smoke test
+│
+├── benchmarks/
+│   └── caliper/                   # Hyperledger Caliper workspace (Phase 4)
+│       ├── networks/certchain-network.yaml
+│       ├── benchconfig.yaml       # issueCredential/verifyCredential rounds, 50-500 tx
+│       └── workloads/             # issueCredential.js, verifyCredential.js
 │
 ├── k8s/
 │   └── nrp-deployment.yaml        # Kubernetes manifests for NRP deployment
@@ -458,6 +465,9 @@ python3 evaluation/evaluate_system.py \
 
 # Layer 5 — MMR sampling verification accuracy (Pv, empirically measured)
 node evaluation/evaluate_mmr_sampling.js
+
+# Layer 5 — 1:1 hash-pointer vs. MMR(+sampling), on the real synthetic dataset
+node evaluation/evaluate_hashpointer_vs_mmr.js
 ```
 
 Results are saved to:
@@ -465,6 +475,36 @@ Results are saved to:
 - `evaluation/scoring_results.json`
 - `evaluation/system_results.json`
 - `evaluation/mmr_sampling_results.json`
+- `evaluation/hashpointer_vs_mmr_results.json`
+
+---
+
+## Performance Benchmarking (Caliper)
+
+`benchmarks/caliper/` is a [Hyperledger Caliper](https://hyperledger.github.io/caliper/)
+workspace for the Phase 4 evaluation table: throughput and latency for
+`issueMicroCredential` (write path) and `verifyCredential` (read path) across a 50-500
+transaction range, at 2 concurrent worker clients (matching the "2 HEI nodes" framing).
+It reuses the same `config/connection.json` connection profile and `wallet/store`
+file-system wallet as the rest of CertChain, so no separate identity setup is required —
+just run `start.sh` first so those identities exist.
+
+```bash
+cd benchmarks/caliper
+npm install
+npx caliper bind --caliper-bind-sut fabric:2.2   # one-time; pins fabric-network@2.2.20
+npm run validate     # dry-run — parses config, connects, sends no transactions
+npm run benchmark     # runs all rounds, writes reports/report.html
+```
+
+**Status: infrastructure only, not yet executed against a live network.** In this
+environment there is no running Fabric peer/orderer/CA, so no benchmark numbers exist yet.
+What has been verified: `npm install` succeeds, `caliper bind` correctly resolves and pins
+`fabric-network@2.2.20` (matching the SDK version used elsewhere in this repo), the network
+config parses, and the Fabric connector loads and correctly detects the installed SDK
+version — the dry run fails at identity-manager initialization only because `wallet/store/`
+doesn't exist in this sandbox, which is the expected, correct failure point absent a live
+network. See `benchmarks/caliper/README.md` for the full validation log and layout.
 
 ---
 
@@ -513,6 +553,39 @@ Per-proof size is ~1.3–1.4 KB regardless of which mode is used (proof size sca
 checking fewer items, not from cheaper individual proofs. These are local computation
 figures only; there's no live Fabric network in this environment to measure real
 transaction round-trip latency, which would dominate wall-clock time in a deployed system.
+
+### 1:1 Hash-Pointer vs. MMR — Comparison on the Real Dataset
+
+`evaluation/evaluate_hashpointer_vs_mmr.js` compares the pre-MMR production scheme
+(`verifyCredential`: one ledger read keyed directly by `CRED~<hash>`, no proof object — the
+state key itself *is* the hash pointer) against the MMR layer, run on real synthetic
+transcript data (`dataset/data_loader.py`'s FCCS generator, not placeholder hashes) so
+credential sizes and hash inputs match what `issueMicroCredential` actually puts on the
+ledger. Run: `node evaluation/evaluate_hashpointer_vs_mmr.js [batchSize]`.
+
+Measured result, N=1,000 real dataset-derived credentials:
+
+| | 1:1 hash-pointer (`verifyCredential` × N) | MMR full (`/mmr/verify` × N) | MMR + sampling |
+|---|---|---|---|
+| Ledger reads (verification) | 1,000 | 1 (anchored root, reused for all N) | 1 |
+| Ledger writes (anchoring, on top of the N issuance writes both schemes already share) | 0 | 1 | 1 |
+| Items checked | 1,000 | 1,000 | 155 |
+| Total bytes transferred | 599,136 | 1,343,750 | 206,877 |
+| Avg bytes per item | 599 | 1,344 | 1,335 |
+
+Read plainly, this is **not** a one-sided win for MMR: per-item, an MMR inclusion proof is
+*larger* than the original scheme's response (log(N) sibling hashes add up to more than one
+compact credential record at N=1,000) — full MMR verification transfers **~124% more total
+bytes** than the original 1:1 scheme at this batch size. MMR's real advantage is structural,
+not per-item: **one anchoring write covers an entire batch** instead of the ledger absorbing
+a write per credential at verification-audit time, and it unlocks sampling — which *is* a
+real win, cutting bytes transferred by **~65.5%** versus the original scheme by checking only
+155 of 1,000 items (at the cost of the honestly-measured, low confidence level documented
+above — sampling trades coverage for cost, it does not get both for free). Also note: unlike
+the original scheme's response, an MMR proof does not carry the credential's human-readable
+fields (courses, score breakdown, IPFS CID, PQ signature) — it only proves hash membership in
+the anchored root, so a verifier still needs one supplementary off-chain fetch to display
+those fields either way.
 
 ---
 

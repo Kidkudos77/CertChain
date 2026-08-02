@@ -16,6 +16,8 @@ wallet/store/
 dataset/output/
 results.json
 evaluation/scoring_results.json
+benchmarks/caliper/reports/*.html
+benchmarks/caliper/caliper.log
 
 # Python cache
 __pycache__/
