@@ -693,6 +693,39 @@ request/response call. Before this is production-viable: pick a minimal bit-widt
 natively-accelerated pairing backend (e.g. `mcl`'s Python bindings) once the algorithm
 itself has cleared independent review — swap the backend, not the verified design.
 
+### UNIQUE (Kwon & Hahn) — building block verified, full construction blocked
+
+`crypto/dere.py` implements and tests DERE (Delegable Equality-Revealing Encryption,
+Section 3) — UNIQUE's underlying building block, used for institution-to-institution
+encrypted equality queries (a different scenario than MORES's employer-verifies-a-credential
+case). Verified the same way as MORES/TIE: worked through the pairing algebra by hand,
+then confirmed with known-answer tests (`crypto/dere_selftest.py`) across equal/unequal
+message pairs, including repeated runs with fresh randomness to confirm the cancellation
+isn't a fluke.
+
+That process caught a real transcription error before any code was written against it: an
+early pass had `DERE.TokGen`'s second token as `pk(v)^(α(u)/β(u))` (division). Working the
+algebra by hand showed that form leaves a random, per-ciphertext term uncancelled — `Test`
+would fail even for equal messages, contradicting the paper's own stated correctness
+result. Re-checked directly against the source PDF (not the earlier text extraction it
+came from): the paper states `α(u)·β(u)` (product). Fixed and re-verified before
+implementation.
+
+**`crypto/unique_core.py` deliberately does not implement UNIQUE's own contribution** —
+the one-way token `OWTv→u = (H(pk(v)^(1/α(u))), H(pk(v)^(β(u))))` that replaces DERE's
+bidirectional token pair, and everything built on it (Section 4's full
+Setup/KeyGen/TokGen/Enc/Test range-comparison construction). The paper's correctness proof
+for `OWTv→u` requires `H(x^c) == H(x)^c` — a property an ordinary hash-to-group function
+doesn't have; it likely needs to be instantiated as a fixed exponentiation (`H(x) = x^s`),
+which is a real cryptographic design decision, not an implementation detail left open by
+the spec. This was checked directly against the source PDF and transcribed accurately —
+unlike the TokGen case, there's no character-level fix available here. Calling
+`crypto/unique_core.py`'s functions raises `NotImplementedError` with the precise reason,
+the same discipline MORES's stubs used before its equations were verified. Also still open
+regardless: whether CertChain actually has the institution-to-institution encrypted-query
+use case UNIQUE targets, versus MORES's `qk` model already covering what's been asked for
+so far.
+
 ---
 
 ## Kaggle Dataset
