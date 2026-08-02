@@ -361,15 +361,17 @@ check `result.status` (`ISSUED`, `NOT_ELIGIBLE`, `MANUAL_REVIEW`, `REJECTED`, or
 or oversized upload always surfaces as an explicit error on the job or an
 immediate 4xx — never a silently-dropped upload.
 
-**Known limitation surfaced while building this**: without a trained BERT
-model, `nlp/transcript_parser.py` falls back to a regex parser that extracts
-`NSA####`-style codes, but `api/server.js`'s course-code allowlist only
-accepts `CIS`/`CNT`/`COP`-prefixed codes — so in a fresh environment with no
-trained model, both this upload path and the pre-existing
-`pipeline.py --transcript` CLI path will reject every transcript with
-`Invalid course code`. This predates the upload feature; it isn't introduced
-by it. Train a BERT model (whose predictions map to the correct codes) or
-reconcile the two code formats before relying on this in a demo without one.
+**Course-code mismatch — resolved.** Without a trained BERT model,
+`nlp/transcript_parser.py` falls back to a regex parser. It previously
+extracted `NSA####`-style codes that `api/server.js`'s course-code allowlist
+(`CIS`/`CNT`/`COP`-prefixed) rejected outright, so neither this upload path
+nor the pre-existing `pipeline.py --transcript` CLI path could ever reach
+`ISSUED` in a fresh environment with no trained model. The fallback parser
+now matches the five official Cyber Defense Certificate course codes
+(formatting-tolerant: `CIS4385C` / `CIS 4385C` / `CIS-4385C`) or their
+distinguishing title keywords (e.g. "Digital Forensics") directly — see
+`COURSE_PATTERNS` in `nlp/transcript_parser.py`. The allowlist in
+`api/server.js` was not changed; it was already correct.
 
 ---
 
@@ -409,7 +411,7 @@ curl http://localhost:3000/verify/abc123def456...
   "credentialCategory": "micro-credential",
   "recognizedBy": "famu.edu",
   "educationalProgram": "FAMU-FCCS",
-  "competencyRequired": ["NSA3010", "NSA4020", "NSA4030"],
+  "competencyRequired": ["CIS4385C", "CIS4360", "CIS4361"],
   "eligibilityScore": 0.84,
   "postQuantumSigned": true,
   "pqAlgorithm": "CRYSTALS-Dilithium3"
