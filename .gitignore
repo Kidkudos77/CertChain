@@ -28,3 +28,4 @@ __pycache__/
 # OS files
 .DS_Store
 *.log
+config/connection.json

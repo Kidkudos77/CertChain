@@ -72,8 +72,9 @@ async function getContract(userID) {
     const ccp = loadProfile(); const wallet = await getWallet();
     if (!await wallet.get(userID)) throw new Error(`Identity '${userID}' not found.`);
     const gateway = new Gateway();
-    await gateway.connect(ccp, { wallet, identity:userID, discovery:{ enabled:false, asLocalhost:true } });
+    await gateway.connect(ccp, { wallet, identity:userID, discovery:{ enabled:true, asLocalhost:true } });
     const contract = (await gateway.getNetwork(CHANNEL)).getContract(CHAINCODE);
+
     return { contract, gateway };
 }
 
