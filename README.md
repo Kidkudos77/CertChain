@@ -393,6 +393,32 @@ distinguishing title keywords (e.g. "Digital Forensics") directly — see
 `COURSE_PATTERNS` in `nlp/transcript_parser.py`. The allowlist in
 `api/server.js` was not changed; it was already correct.
 
+**Prerequisite gate: COP 3014C (Fundamentals of Programming).** The certificate
+requires proof this course was completed *before* starting the certificate program —
+it's a hard gate (like the GPA minimum), not one of the five certificate courses, and
+never counts toward the `MIN_COURSES` completion total. `nlp/transcript_parser.py`
+detects it separately (`PREREQUISITE_PATTERNS`, independent of `COURSE_PATTERNS`) and
+sets `prerequisite_completed` in the NLP payload; `chaincode/certchain.js`'s
+`issueMicroCredential` rejects with a specific reason if it's missing, and records
+`prerequisite_verified: "COP3014C"` on issued credentials (which prerequisite was
+checked — not the raw boolean, matching the existing FERPA-minimal-disclosure pattern
+for on-chain fields). Verified end-to-end at both the chaincode level (a mock-ledger
+harness covering missing/false/true cases, plus a check that a low-GPA rejection still
+reports the GPA reason, not the prerequisite one, confirming gate ordering) and the
+real `/issue` HTTP route — the latter caught a real bug: `api/server.js`'s `cleanPayload`
+rebuild (the "never pass raw user input straight to chaincode" step) omitted the new
+field entirely, which would have silently rejected every real issuance regardless of
+the transcript. Fixed and re-verified through the actual route, not just the schema
+validator, before considering this done.
+
+**Still open, not guessed at**: the official course list marks CIS 4360 and COP 3710
+with `**` (source: the course-list image provided when this was implemented), and what
+that footnote means changes the eligibility rule — e.g. "these two are mandatory plus N
+of the remaining three" vs. a non-eligibility catalog note vs. "all five required." This
+implementation left the existing `MIN_COURSES=3`-of-5 rule unchanged (the conservative,
+already-implemented default) rather than invent a reading of `**`. Confirm what it means
+and `_check()`/`FCCS_COURSES` filtering can be updated precisely instead of guessed.
+
 ---
 
 ## API Reference
