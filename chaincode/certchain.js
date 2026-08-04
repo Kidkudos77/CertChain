@@ -55,6 +55,10 @@ const mmr          = require('./mmr');
 
 const PROGRAM      = 'FAMU-FCCS';
 const ISSUER       = 'famu.edu';
+// CIS4360 and COP3710 are marked '**' on the official course list — confirmed
+// this means "required for all three CIS degree programs" (a department-wide
+// catalog note), not a Cybersecurity Certificate-specific rule. Any 3 of
+// these 5 satisfies the certificate; all 5 are equally weighted below.
 const FCCS_COURSES = ['CIS4385C','CIS4360','CIS4361','CNT4406','COP3710'];
 // Prerequisite: COP 3014C (Fundamentals of Programming) must be completed
 // BEFORE starting the certificate program of study. It is not one of the

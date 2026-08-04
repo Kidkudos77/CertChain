@@ -411,13 +411,12 @@ field entirely, which would have silently rejected every real issuance regardles
 the transcript. Fixed and re-verified through the actual route, not just the schema
 validator, before considering this done.
 
-**Still open, not guessed at**: the official course list marks CIS 4360 and COP 3710
-with `**` (source: the course-list image provided when this was implemented), and what
-that footnote means changes the eligibility rule — e.g. "these two are mandatory plus N
-of the remaining three" vs. a non-eligibility catalog note vs. "all five required." This
-implementation left the existing `MIN_COURSES=3`-of-5 rule unchanged (the conservative,
-already-implemented default) rather than invent a reading of `**`. Confirm what it means
-and `_check()`/`FCCS_COURSES` filtering can be updated precisely instead of guessed.
+**Resolved**: the official course list marks CIS 4360 and COP 3710 with `**` — confirmed
+this means "these courses are required for all three Computer and Information Sciences
+(CIS) degree programs," a cross-program catalog note about the CIS department generally,
+not a Cybersecurity Certificate eligibility rule. It does not change how many of the five
+courses this certificate requires. The existing `MIN_COURSES=3`-of-5 rule (any 3 of the 5
+listed courses) is correct as implemented — no code change needed.
 
 ---
 
