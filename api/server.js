@@ -209,10 +209,14 @@ function validateNlpPayload(p) {
         return 'nlpPayload.courses_completed must be an array.';
     if (p.courses_completed.length > 20)
         return 'nlpPayload.courses_completed too long.';
-    const VALID_COURSES = new Set(['CIS4385C','CIS4360','CIS4361','CNT4406','COP3710','COP3014C']);
+    // COP3014C is a prerequisite (see prerequisite_completed below), not one
+    // of the 5 certificate courses — it must never appear in this array.
+    const VALID_COURSES = new Set(['CIS4385C','CIS4360','CIS4361','CNT4406','COP3710']);
     for (const c of p.courses_completed) {
         if (!VALID_COURSES.has(c)) return `Invalid course code: ${c}`;
     }
+    if (typeof p.prerequisite_completed !== 'boolean')
+        return 'nlpPayload.prerequisite_completed must be a boolean.';
     if (typeof p.bert_confidence !== 'number' || p.bert_confidence < 0 || p.bert_confidence > 1)
         return 'nlpPayload.bert_confidence must be between 0 and 1.';
     if (typeof p.eligibility_score !== 'number' || p.eligibility_score < 0 || p.eligibility_score > 1)
@@ -351,11 +355,12 @@ app.post('/issue', auth.requireAuth(['institution', 'admin']), async (req, res) 
         const { contract, gateway } = await getContract(req.session.fabricID);
         // Rebuild a clean payload object — never pass raw user input directly to chaincode
         const cleanPayload = {
-            gpa:               Number(nlpPayload.gpa.toFixed(2)),
-            courses_completed: nlpPayload.courses_completed,
-            bert_confidence:   Number(nlpPayload.bert_confidence.toFixed(4)),
-            eligibility_score: Number(nlpPayload.eligibility_score.toFixed(4)),
-            student_name:      auth.sanitizeStr(nlpPayload.student_name || '', 100),
+            gpa:                    Number(nlpPayload.gpa.toFixed(2)),
+            courses_completed:      nlpPayload.courses_completed,
+            prerequisite_completed: nlpPayload.prerequisite_completed,
+            bert_confidence:        Number(nlpPayload.bert_confidence.toFixed(4)),
+            eligibility_score:      Number(nlpPayload.eligibility_score.toFixed(4)),
+            student_name:           auth.sanitizeStr(nlpPayload.student_name || '', 100),
         };
         const result = await contract.submitTransaction(
             'issueMicroCredential', studentID, JSON.stringify(cleanPayload));

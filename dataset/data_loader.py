@@ -91,7 +91,6 @@ COURSE_VARIATIONS = {
         'Applied crypto NSA4050 grade B plus',
     ],
     'NONE': [
-        'COP3014 Programming Fundamentals A',
         'MAD2104 Discrete Mathematics B+',
         'COT3100 Introduction to Algorithms A-',
         'MAN3025 Management of Organizations B',
@@ -107,6 +106,21 @@ COURSE_VARIATIONS = {
         'CHM1045 General Chemistry B',
     ],
 }
+
+# Prerequisite: COP 3014C (Fundamentals of Programming), must be completed
+# BEFORE starting the certificate program. Text variations match
+# nlp/transcript_parser.py's PREREQUISITE_PATTERNS. Kept separate from
+# COURSE_VARIATIONS['NONE'] (unlike the earlier synthetic dataset, which
+# buried a 'COP3014 Programming Fundamentals A' line in there as an
+# irrelevant filler course) — this course now has real eligibility
+# significance and its inclusion needs to be controlled per-student, not
+# left to random filler selection.
+PREREQUISITE_VARIATIONS = [
+    'COP3014C Fundamentals of Programming Grade: A-',
+    'Fundamentals of Programming (COP3014C) B+',
+    'COP 3014C - Fundamentals of Programming A',
+    'Completed COP3014C: Fundamentals of Programming, Grade B',
+]
 
 GRADES      = ['A', 'A-', 'B+', 'B', 'B-', 'C+', 'C']
 GRADE_PTS   = {'A':4.0,'A-':3.7,'B+':3.3,'B':3.0,'B-':2.7,'C+':2.3,'C':2.0}
@@ -154,10 +168,12 @@ def weighted_score(gpa: float, n_courses: int, bert_conf: float = 0.90) -> float
     return round(W1*(gpa/4.0) + W2*(n_courses/5.0) + W3*bert_conf, 4)
 
 
-def make_transcript_text(name, student_id, enroll_date, course_grades, gpa) -> str:
+def make_transcript_text(name, student_id, enroll_date, course_grades, gpa, prerequisite_completed=True) -> str:
     lines = []
     for code, grade in course_grades.items():
         lines.append(random.choice(COURSE_VARIATIONS[code]))
+    if prerequisite_completed:
+        lines.append(random.choice(PREREQUISITE_VARIATIONS))
     for _ in range(random.randint(3, 5)):
         lines.append(random.choice(COURSE_VARIATIONS['NONE']))
     random.shuffle(lines)
@@ -196,7 +212,8 @@ def save_outputs(students: list, out_dir: str):
             'student_id': s['student_id'],
             'text':       make_transcript_text(
                 s['name'], s['student_id'],
-                s['enroll_date'], s['course_grades'], s['gpa']
+                s['enroll_date'], s['course_grades'], s['gpa'],
+                s['prerequisite_completed']
             )
         })
         sentence_labels.extend(make_sentence_labels(s['course_grades']))
@@ -205,6 +222,7 @@ def save_outputs(students: list, out_dir: str):
                 'student_id':        s['student_id'],
                 'gpa':               s['gpa'],
                 'courses_completed': s['courses'],
+                'prerequisite_completed': s['prerequisite_completed'],
                 'bert_confidence':   0.90,
                 'eligibility_score': s['score'],
             })
@@ -213,7 +231,7 @@ def save_outputs(students: list, out_dir: str):
     with open(f'{out_dir}/structured_dataset.csv', 'w', newline='') as f:
         w = csv.DictWriter(f, fieldnames=[
             'student_id','name','program','enroll_date',
-            'courses','gpa','eligibility_score','eligible'])
+            'courses','prerequisite_completed','gpa','eligibility_score','eligible'])
         w.writeheader()
         for s in students:
             w.writerow({
@@ -222,6 +240,7 @@ def save_outputs(students: list, out_dir: str):
                 'program':           s['program'],
                 'enroll_date':       s['enroll_date'],
                 'courses':           '|'.join(s['courses']),
+                'prerequisite_completed': s['prerequisite_completed'],
                 'gpa':               s['gpa'],
                 'eligibility_score': s['score'],
                 'eligible':          s['eligible'],
@@ -272,12 +291,22 @@ def generate_synthetic(n: int = 200) -> list:
         gpa    = compute_gpa(grades)
         courses = list(grades.keys())
         score  = weighted_score(gpa, len(courses))
+
+        # Prerequisite (COP 3014C) is a separate hard gate, not part of the
+        # weighted score. Eligible students always have it (otherwise the
+        # 'eligible' label below wouldn't match what the real chaincode gate
+        # would decide); a fraction of ineligible students specifically lack
+        # it, so the dataset actually exercises this failure reason rather
+        # than every ineligible case being GPA/course-count driven.
+        prerequisite_completed = True if force == 'eligible' else random.random() >= 0.2
+
         return {
             'student_id':   sid,   'name':         name,
             'program':      'FCCS','enroll_date':  enroll,
             'course_grades':grades,'courses':       courses,
             'gpa':          gpa,   'score':         score,
-            'eligible':     score >= SCORE_THRESHOLD,
+            'prerequisite_completed': prerequisite_completed,
+            'eligible':     score >= SCORE_THRESHOLD and prerequisite_completed,
         }
 
     for i in range(n_elig):
@@ -328,11 +357,17 @@ def load_kaggle(filepath: str) -> list:
                 course_grades = {c: random.choice(GRADES) for c in courses}
                 score  = weighted_score(gpa, len(courses))
 
+                # Kaggle datasets generally won't have a prerequisite column
+                # (KAGGLE_COLUMN_MAP has no entry for it) -- defaults to True
+                # so Kaggle-mode eligibility isn't silently gated on data
+                # that was never collected. Add a real column mapping here
+                # if a specific dataset does track this.
                 students.append({
                     'student_id':    sid,   'name':         name,
                     'program':       'FCCS','enroll_date':  '2023-01-01',
                     'course_grades': course_grades, 'courses': courses,
                     'gpa':           gpa,   'score':         score,
+                    'prerequisite_completed': True,
                     'eligible':      score >= SCORE_THRESHOLD,
                 })
             except Exception as e:

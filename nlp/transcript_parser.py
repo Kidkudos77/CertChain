@@ -29,6 +29,13 @@ COURSE_PATTERNS = {
     'COP3710':  [r'\bCOP[\s-]?3710\b',  r'\bdatabase\s+management\b'],
 }
 
+# Prerequisite: COP 3014C (Fundamentals of Programming) must be completed
+# BEFORE starting the certificate program of study. Detected separately
+# from COURSE_PATTERNS above — it is not one of the 5 certificate courses
+# and must never count toward MIN_COURSES; it's a hard gate, like MIN_GPA.
+PREREQUISITE_COURSE = 'COP3014C'
+PREREQUISITE_PATTERNS = [r'\bCOP[\s-]?3014C?\b', r'\bfundamentals\s+of\s+programming\b']
+
 
 @dataclass
 class ParsedTranscript:
@@ -36,6 +43,7 @@ class ParsedTranscript:
     student_name:         Optional[str]
     gpa:                  float
     courses_completed:    List[str]
+    prerequisite_completed: bool
     bert_confidence:      float
     eligibility_score:    float
     eligible:             bool
@@ -60,6 +68,7 @@ class TranscriptParser:
         sid    = student_id or self._extract_id(transcript_text)
         name   = self._extract_name(transcript_text)
         gpa    = self._extract_gpa(transcript_text)
+        prerequisite_completed = self._detect_prerequisite(transcript_text)
 
         if self.bert:
             result     = self.bert.parse_transcript(transcript_text)
@@ -69,11 +78,12 @@ class TranscriptParser:
             courses, confidence = self._regex_courses(transcript_text), 0.75
 
         score    = round(W1*(gpa/4.0) + W2*(len(courses)/5.0) + W3*confidence, 4)
-        eligible, reason = self._check(gpa, courses, score)
+        eligible, reason = self._check(gpa, courses, score, prerequisite_completed)
 
         return ParsedTranscript(
             student_id=sid, student_name=name, gpa=gpa,
             courses_completed=sorted(courses),
+            prerequisite_completed=prerequisite_completed,
             bert_confidence=confidence, eligibility_score=score,
             eligible=eligible, ineligibility_reason=reason,
         )
@@ -82,6 +92,7 @@ class TranscriptParser:
         return json.dumps({
             'gpa':               t.gpa,
             'courses_completed': t.courses_completed,
+            'prerequisite_completed': t.prerequisite_completed,
             'bert_confidence':   t.bert_confidence,
             'eligibility_score': t.eligibility_score,
             'student_name':      t.student_name,
@@ -102,6 +113,14 @@ class TranscriptParser:
             return g if 0.0 <= g <= 4.0 else 0.0
         return 0.0
 
+    def _detect_prerequisite(self, text):
+        """Whether COP 3014C (Fundamentals of Programming) appears on the
+        transcript. Always regex-based, independent of whether BERT is used
+        for the 5 certificate courses — BERT's training taxonomy
+        (COURSE_VARIATIONS in dataset/data_loader.py) doesn't include this
+        prerequisite, so there's nothing to defer to it for."""
+        return any(re.search(p, text, re.I) for p in PREREQUISITE_PATTERNS)
+
     def _regex_courses(self, text):
         """Fallback and baseline for evaluation comparison.
         Matches the five official Cyber Defense Certificate course codes or
@@ -115,7 +134,9 @@ class TranscriptParser:
                     break
         return sorted(found)
 
-    def _check(self, gpa, courses, score):
+    def _check(self, gpa, courses, score, prerequisite_completed):
+        if not prerequisite_completed:
+            return False, f'Prerequisite {PREREQUISITE_COURSE} (Fundamentals of Programming) not completed'
         if gpa < MIN_GPA:
             return False, f'GPA {gpa} below minimum {MIN_GPA}'
         if len(courses) < MIN_COURSES:

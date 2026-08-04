@@ -56,6 +56,11 @@ const mmr          = require('./mmr');
 const PROGRAM      = 'FAMU-FCCS';
 const ISSUER       = 'famu.edu';
 const FCCS_COURSES = ['CIS4385C','CIS4360','CIS4361','CNT4406','COP3710'];
+// Prerequisite: COP 3014C (Fundamentals of Programming) must be completed
+// BEFORE starting the certificate program of study. It is not one of the
+// FCCS_COURSES above and never counts toward MIN_COURSES — it's a hard
+// gate, checked separately, the same way MIN_GPA is.
+const PREREQUISITE_COURSE = 'COP3014C';
 const MIN_GPA      = 3.0;
 const MIN_COURSES  = 3;
 const W1=0.40, W2=0.40, W3=0.20;
@@ -127,7 +132,7 @@ class CertChain extends Contract {
         try { payload = JSON.parse(nlpPayloadStr); }
         catch(e) { throw new Error('Invalid NLP payload JSON.'); }
 
-        const { gpa, courses_completed, bert_confidence } = payload;
+        const { gpa, courses_completed, bert_confidence, prerequisite_completed } = payload;
         // student_name and gpa intentionally NOT destructured for on-chain use
 
         const validCourses = (courses_completed||[]).filter(
@@ -135,6 +140,13 @@ class CertChain extends Contract {
         );
 
         // Hard pre-checks — computed from off-chain data, not stored
+        if (!prerequisite_completed) {
+            await this._log(ctx, studentID, 'REJECTED', `Prerequisite ${PREREQUISITE_COURSE} not completed`);
+            return JSON.stringify({
+                success: false,
+                reason: `Prerequisite ${PREREQUISITE_COURSE} (Fundamentals of Programming) must be completed prior to starting the certificate program.`
+            });
+        }
         if (parseFloat(gpa) < MIN_GPA) {
             await this._log(ctx, studentID, 'REJECTED', `GPA below minimum`);
             // Note: actual GPA value not logged — FERPA protection
@@ -176,6 +188,7 @@ class CertChain extends Contract {
             issuerID:          ISSUER,
             program:           PROGRAM,
             courses_completed: validCourses,   // course codes only, no grades
+            prerequisite_verified: PREREQUISITE_COURSE,  // gate passed; boolean itself isn't stored, just which prerequisite was checked
             eligibility_score: scoring.score,  // computed score, not raw GPA
             score_breakdown:   scoring.breakdown,
             issuedAt,
