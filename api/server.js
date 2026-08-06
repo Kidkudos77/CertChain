@@ -33,7 +33,7 @@ const { execFile } = require('child_process');
 const { extractText } = require('./transcript_extract');
 const issues     = require('./issues');
 const mores      = require('../crypto/mores_client');
-const explain    = require('../explain/decision-interpreter');
+const explain    = require('../packages/decision-interpreter');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -181,7 +181,7 @@ function validateBatchId(id) {
 }
 
 // Phase 8 explainability layer: this system's RBAC roles (admin, institution,
-// student, verifier) aren't quite explain/decision-interpreter.js's
+// student, verifier) aren't quite packages/decision-interpreter's
 // viewerRole set (student, institution, verifier, auditor) — admin maps to
 // auditor (full-depth view), matching the existing pattern where admin-only
 // endpoints already see everything (getVerificationLog, getMismatchAlerts).

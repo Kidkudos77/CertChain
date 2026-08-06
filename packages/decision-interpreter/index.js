@@ -2,14 +2,19 @@
 /**
  * CertChain — Framework-Wide Explainability Layer (Phase 8, SSD-derived)
  * ==========================================================================
+ * This is the authoritative ruleset — packages/decision-interpreter/ exists
+ * as its own small package specifically so there's one canonical place this
+ * logic lives, not a file embedded in whichever consumer happened to need
+ * it first.
+ *
  * SSD's actual contribution is a reusable pattern, not a wallet-signing
  * feature: parse a raw request → interpret it against a rule-based
  * knowledge base → produce a plain-language, risk-flagged summary before
  * a human commits to something consequential. FabricVault's signing
  * confirmation is one place that pattern applies in CertChain — it is not
- * the only one (see the consumer table below). Building it once here,
- * shared, instead of four separate times, is the point: one thing to keep
- * correct instead of four things to keep in sync.
+ * the only one (see the consumer table in the README). Building it once
+ * here, shared, instead of four separate times, is the point: one thing to
+ * keep correct instead of four things to keep in sync.
  *
  * Deterministic, rule-based, no ML anywhere in this layer — same as SSD's
  * own design. Three-stage shape:
@@ -19,12 +24,17 @@
  *   summarize(interpretation, viewerRole) -> plain-language summary
  *
  * Consumers (as of Phase 8):
- *   - api/server.js can call this directly today.
- *   - FabricVault (the browser extension) is a consumer in design, not in
- *     code: its source isn't in this repository, so it isn't wired to
- *     import this module here. Whoever has that source imports this file
- *     the same way api/server.js does — nothing about the module's shape
- *     is API-side-specific.
+ *   - api/server.js requires this package directly.
+ *   - FabricVault (fabricvault/, a git submodule — see the README's
+ *     "FabricVault Integration" section) keeps ported copies
+ *     (packages/extension/src/lib/decision-interpreter.ts and
+ *     chrome-extension/popup.js's inline copy) rather than importing this
+ *     file directly, because it must stay buildable as a standalone repo —
+ *     a browser extension can't reach across a submodule boundary at build
+ *     time, and FabricVault has its own users who clone it directly.
+ *     scripts/check-fabricvault-sync.js (run from this repo) verifies the
+ *     ported copies stay behaviorally identical to this file, since a text
+ *     diff isn't meaningful across JS/TypeScript.
  *   - ore_query (Phase 7) is deliberately left out of REQUEST_TYPES below
  *     until the ORE cryptographic core exists — adding it now would imply
  *     a feature that isn't built.
@@ -138,6 +148,15 @@ function parseRequest(rawPayload, requestType) {
     const parsedFields = {};
     for (const path of Object.keys(fields)) {
         parsedFields[path] = getPath(rawPayload, path);
+    }
+    // pqc_signing's credHash accepts a credentialHash alias — a credential
+    // pasted from GET /verify/:hash's response uses that field name, not
+    // credHash. Found via scripts/check-fabricvault-sync.js: FabricVault's
+    // ported copies already did this (a real user need, not a copy-paste
+    // slip), the authoritative source here didn't — fixed to match, since
+    // the port's behavior was the more correct one for its actual use case.
+    if (requestType === REQUEST_TYPES.PQC_SIGNING && parsedFields.credHash === undefined) {
+        parsedFields.credHash = getPath(rawPayload, 'credentialHash');
     }
     return parsedFields;
 }

@@ -36,6 +36,7 @@
 - [Sampling-Based Batch Verification](#sampling-based-batch-verification)
 - [Issue Reporting](#issue-reporting)
 - [Explainability Layer](#explainability-layer)
+- [FabricVault Integration](#fabricvault-integration)
 - [ORE Layer (Phase 7 — cryptographic core implemented, pending independent review)](#ore-layer-phase-7--cryptographic-core-implemented-pending-independent-review)
 - [Kaggle Dataset](#kaggle-dataset)
 - [NRP Deployment](#nrp-deployment)
@@ -177,8 +178,10 @@ certchain/
 │   ├── mores_client.js            # Node-side client for the sidecar
 │   └── mores_keys.py              # msk/qk storage + distribution plumbing
 │
-├── explain/
-│   └── decision-interpreter.js    # Shared explainability layer (Phase 8, SSD-derived)
+├── packages/
+│   └── decision-interpreter/      # Authoritative explainability ruleset (Phase 8,
+│       ├── index.js               # SSD-derived) — FabricVault keeps behaviorally-
+│       └── package.json           # verified ported copies, see FabricVault Integration
 │
 ├── api/
 │   ├── server.js                  # REST API with JSON-LD credential endpoints
@@ -214,6 +217,11 @@ certchain/
 ├── config/
 │   └── connection.json            # Hyperledger Fabric connection profile
 │
+├── fabricvault/                   # Git submodule → github.com/kidkudos77/fabricvault
+│                                  # The PQC wallet + explainability-gated signing UI
+│                                  # referenced throughout this README. See
+│                                  # "FabricVault Integration" below.
+│
 └── requirements.txt               # Python dependencies
 ```
 
@@ -237,8 +245,12 @@ certchain/
 
 ### Step 1 — Clone the repository
 
+FabricVault (the PQC wallet + explainability-gated signing UI referenced throughout
+this README) is a git submodule, not vendored code — clone with `--recurse-submodules`,
+or run `git submodule update --init` afterward if you already cloned without it:
+
 ```bash
-git clone https://github.com/YOUR_USERNAME/certchain.git
+git clone --recurse-submodules https://github.com/YOUR_USERNAME/certchain.git
 cd certchain
 ```
 
@@ -602,7 +614,7 @@ involvement and no new RBAC role: `api/issues.js` is a flat, atomically-written 
 
 ## Explainability Layer
 
-`explain/decision-interpreter.js` is a single shared module — not a per-feature
+`packages/decision-interpreter/index.js` is a single shared module — not a per-feature
 reimplementation — that turns a raw response into a plain-language, risk-flagged summary:
 `parseRequest(rawPayload, requestType) → interpret(parsedFields) → summarize(interpretation, viewerRole)`.
 Deterministic and rule-based, no ML. Wired additively into `/issue`, `/verify/:hash`, and
@@ -629,6 +641,38 @@ was "confirmed working" meant key generation and `window.fabric` detection only,
 verified sign/verify round-trip — that verification didn't exist until this fix (now
 merged to `main`, verified via a Node-based DOM/`chrome` mock in the absence of a real
 browser in-session).
+
+---
+
+## FabricVault Integration
+
+FabricVault is a git submodule (`fabricvault/`, pinned to
+[`kidkudos77/fabricvault`](https://github.com/kidkudos77/fabricvault)), not vendored code
+and not just a link in prose — cloning this repo with `--recurse-submodules` gets you the
+actual wallet/signing-UI source alongside the chaincode and API, so the PQC signing and
+explainability-gated UI described above are things a reviewer can read and run, not take on
+faith. Update the pinned commit the normal submodule way:
+
+```bash
+cd fabricvault
+git checkout main && git pull
+cd ..
+git add fabricvault
+git commit -m "Update FabricVault submodule to <reason>"
+```
+
+**Shared explainability ruleset**: `packages/decision-interpreter/index.js`'s `pqc_signing` rules
+are authoritative here (`packages/decision-interpreter/`, see below), and FabricVault keeps
+its own ported copies (`fabricvault/packages/extension/src/lib/decision-interpreter.ts`,
+and `fabricvault/chrome-extension/popup.js`'s inline copy) because it has to stay buildable
+as a standalone repo on its own — a browser extension can't reach across a submodule
+boundary to `require()` its parent's source at build time, and FabricVault's own users clone
+it directly, not through CertChain. Rather than leave "two copies, might silently drift" as
+an accepted risk, `scripts/check-fabricvault-sync.js` runs both implementations against the
+same battery of test inputs and asserts identical output — a behavioral equivalence check,
+not a text diff, so it still catches drift even though the two copies are written in
+different languages (JS vs. TypeScript) with different surrounding code. Wired into CI (see
+below); run it locally with `node scripts/check-fabricvault-sync.js`.
 
 ---
 
