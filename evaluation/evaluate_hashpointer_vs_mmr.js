@@ -71,6 +71,7 @@ function buildCredential(payload, idx) {
         issuerID: ISSUER,
         program: PROGRAM,
         courses_completed: payload.courses_completed,
+        prerequisite_verified: 'COP3014C',
         eligibility_score: scoring.score,
         score_breakdown: scoring.breakdown,
         issuedAt: new Date(Date.now() - idx * 1000).toISOString(),
