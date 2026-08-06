@@ -1,0 +1,3 @@
+[submodule "fabricvault"]
+	path = fabricvault
+	url = https://github.com/kidkudos77/fabricvault

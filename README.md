@@ -31,11 +31,13 @@
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Testing & CI](#testing--ci)
 - [Evaluation](#evaluation)
 - [Performance Benchmarking (Caliper)](#performance-benchmarking-caliper)
 - [Sampling-Based Batch Verification](#sampling-based-batch-verification)
 - [Issue Reporting](#issue-reporting)
 - [Explainability Layer](#explainability-layer)
+- [FabricVault Integration](#fabricvault-integration)
 - [ORE Layer (Phase 7 — cryptographic core implemented, pending independent review)](#ore-layer-phase-7--cryptographic-core-implemented-pending-independent-review)
 - [Kaggle Dataset](#kaggle-dataset)
 - [NRP Deployment](#nrp-deployment)
@@ -148,15 +150,24 @@ certchain/
 │
 ├── .github/
 │   └── workflows/
-│       └── certchain.yml          # GitHub Actions CI/CD pipeline
+│       └── certchain.yml          # CI: Python/scoring tests, TIE/MORES/DERE
+│                                  # self-tests, chaincode unit tests, MMR
+│                                  # self-test, API smoke test, FabricVault
+│                                  # build + decision-interpreter sync check
+│
+├── scripts/
+│   └── check-fabricvault-sync.mjs # Behavioral consistency check, CertChain
+│                                  # vs. FabricVault's ported decision-interpreter
 │
 ├── chaincode/
 │   ├── certchain.js               # Hyperledger Fabric smart contract
 │   │                              # Contains Layer 2 weighted scoring algorithm
 │   │                              # Role-based access control, JSON-LD output
 │   │                              # Audit log, program analytics, MMR anchoring
-│   └── mmr.js                     # Merkle Mountain Range core (build/prove/verify)
-│                                  # Required by both certchain.js and api/server.js
+│   ├── mmr.js                     # Merkle Mountain Range core (build/prove/verify)
+│   │                              # Required by both certchain.js and api/server.js
+│   └── test/
+│       └── certchain.test.js      # Mock-ledger unit tests (issuance, verification, MMR)
 │
 ├── nlp/
 │   ├── bert_classifier.py         # BERT model — training and inference (Layer 1)
@@ -177,15 +188,20 @@ certchain/
 │   ├── mores_client.js            # Node-side client for the sidecar
 │   └── mores_keys.py              # msk/qk storage + distribution plumbing
 │
-├── explain/
-│   └── decision-interpreter.js    # Shared explainability layer (Phase 8, SSD-derived)
+├── packages/
+│   └── decision-interpreter/      # Authoritative explainability ruleset (Phase 8,
+│       ├── index.js               # SSD-derived) — FabricVault keeps behaviorally-
+│       └── package.json           # verified ported copies, see FabricVault Integration
 │
 ├── api/
 │   ├── server.js                  # REST API with JSON-LD credential endpoints
 │   ├── mmr_sampling.js            # Sampling audit: sampler, confidence formula,
 │   │                              # round-loop orchestrator (shared with the
 │   │                              # evaluation harness below)
-│   └── issues.js                  # Issue-reporting flat JSON log
+│   ├── issues.js                  # Issue-reporting flat JSON log
+│   └── test/
+│       └── smoke.test.js          # Real server, mocked Fabric contract — /health,
+│                                  # /issue, /verify, /mmr/anchor end-to-end
 │
 ├── dataset/
 │   └── data_loader.py             # Synthetic dataset generator + Kaggle drop-in
@@ -214,6 +230,11 @@ certchain/
 ├── config/
 │   └── connection.json            # Hyperledger Fabric connection profile
 │
+├── fabricvault/                   # Git submodule → github.com/kidkudos77/fabricvault
+│                                  # The PQC wallet + explainability-gated signing UI
+│                                  # referenced throughout this README. See
+│                                  # "FabricVault Integration" below.
+│
 └── requirements.txt               # Python dependencies
 ```
 
@@ -237,8 +258,12 @@ certchain/
 
 ### Step 1 — Clone the repository
 
+FabricVault (the PQC wallet + explainability-gated signing UI referenced throughout
+this README) is a git submodule, not vendored code — clone with `--recurse-submodules`,
+or run `git submodule update --init` afterward if you already cloned without it:
+
 ```bash
-git clone https://github.com/YOUR_USERNAME/certchain.git
+git clone --recurse-submodules https://github.com/YOUR_USERNAME/certchain.git
 cd certchain
 ```
 
@@ -469,6 +494,39 @@ curl http://localhost:3000/verify/abc123def456...
 
 ---
 
+## Testing & CI
+
+All of the following are plain Node/Python scripts — no test framework dependency
+(jest/mocha/pytest) — that exit non-zero on failure and are what `.github/workflows/certchain.yml`
+actually runs on every push/PR (that file previously lived at `workflows/certchain.yml`,
+a location GitHub Actions never discovers, so none of this ran automatically until it was
+moved):
+
+```bash
+# Chaincode: mock-ledger tests (issuance accept/reject paths incl. the
+# prerequisite gate, verification incl. revocation, MMR anchor + inclusion
+# proof + tamper rejection)
+node chaincode/test/certchain.test.js
+
+# MMR primitive self-test (build/prove/verify + tamper-rejection)
+node chaincode/mmr.js
+
+# API smoke test — starts the real server with a mocked Fabric contract,
+# exercises /health, /auth, /issue, /verify/:hash, /mmr/anchor, /mmr/root
+node api/test/smoke.test.js
+
+# ORE-layer cryptographic self-tests (real BLS12-381 pairings, ~3.5s/pairing
+# — each of these takes a few minutes, see the ORE Layer section)
+cd crypto && python3 tie_selftest.py && python3 mores_selftest.py && python3 dere_selftest.py
+
+# FabricVault <-> CertChain decision-interpreter behavioral consistency
+# check (requires the fabricvault/ submodule initialized, and Node >=22.6
+# for --experimental-strip-types)
+node --experimental-strip-types scripts/check-fabricvault-sync.mjs
+```
+
+---
+
 ## Evaluation
 
 Run all three evaluations after the system is operational. These produce your Chapter 4 thesis results.
@@ -627,7 +685,7 @@ involvement and no new RBAC role: `api/issues.js` is a flat, atomically-written 
 
 ## Explainability Layer
 
-`explain/decision-interpreter.js` is a single shared module — not a per-feature
+`packages/decision-interpreter/index.js` is a single shared module — not a per-feature
 reimplementation — that turns a raw response into a plain-language, risk-flagged summary:
 `parseRequest(rawPayload, requestType) → interpret(parsedFields) → summarize(interpretation, viewerRole)`.
 Deterministic and rule-based, no ML. Wired additively into `/issue`, `/verify/:hash`, and
@@ -654,6 +712,38 @@ was "confirmed working" meant key generation and `window.fabric` detection only,
 verified sign/verify round-trip — that verification didn't exist until this fix (now
 merged to `main`, verified via a Node-based DOM/`chrome` mock in the absence of a real
 browser in-session).
+
+---
+
+## FabricVault Integration
+
+FabricVault is a git submodule (`fabricvault/`, pinned to
+[`kidkudos77/fabricvault`](https://github.com/kidkudos77/fabricvault)), not vendored code
+and not just a link in prose — cloning this repo with `--recurse-submodules` gets you the
+actual wallet/signing-UI source alongside the chaincode and API, so the PQC signing and
+explainability-gated UI described above are things a reviewer can read and run, not take on
+faith. Update the pinned commit the normal submodule way:
+
+```bash
+cd fabricvault
+git checkout main && git pull
+cd ..
+git add fabricvault
+git commit -m "Update FabricVault submodule to <reason>"
+```
+
+**Shared explainability ruleset**: `packages/decision-interpreter/index.js`'s `pqc_signing` rules
+are authoritative here (`packages/decision-interpreter/`, see below), and FabricVault keeps
+its own ported copies (`fabricvault/packages/extension/src/lib/decision-interpreter.ts`,
+and `fabricvault/chrome-extension/popup.js`'s inline copy) because it has to stay buildable
+as a standalone repo on its own — a browser extension can't reach across a submodule
+boundary to `require()` its parent's source at build time, and FabricVault's own users clone
+it directly, not through CertChain. Rather than leave "two copies, might silently drift" as
+an accepted risk, `scripts/check-fabricvault-sync.js` runs both implementations against the
+same battery of test inputs and asserts identical output — a behavioral equivalence check,
+not a text diff, so it still catches drift even though the two copies are written in
+different languages (JS vs. TypeScript) with different surrounding code. Wired into CI (see
+below); run it locally with `node scripts/check-fabricvault-sync.js`.
 
 ---
 

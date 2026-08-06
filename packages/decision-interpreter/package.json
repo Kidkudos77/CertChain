@@ -1,0 +1,8 @@
+{
+  "name": "certchain-decision-interpreter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CertChain's framework-wide explainability layer (Phase 8, SSD-derived) — the authoritative pqc_signing/credential_issuance/credential_verification/mmr_batch_verification ruleset. FabricVault (a separate repo) keeps ported copies for standalone buildability; scripts/check-fabricvault-sync.js verifies they stay behaviorally identical.",
+  "main": "index.js",
+  "license": "MIT"
+}
