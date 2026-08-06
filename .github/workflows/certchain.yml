@@ -1,0 +1,180 @@
+name: CertChain CI/CD
+
+# Note: this workflow previously lived at workflows/certchain.yml, which
+# GitHub Actions never discovers or runs — only .github/workflows/*.yml is
+# recognized. That meant none of this had actually executed since it was
+# written. Moved here as part of adding the jobs below, not just alongside
+# them.
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+
+  # ── Test Python components (NLP + Dataset + Evaluation) ────────────────────
+  test-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate synthetic dataset
+        run: python dataset/data_loader.py --mode synthetic --n 50
+
+      - name: Run scoring evaluation (no Fabric needed)
+        run: python evaluation/evaluate_scoring.py --data dataset/output/structured_dataset.csv
+
+      - name: Test post-quantum signer
+        run: python quantum/pq_signer.py
+
+      - name: Upload evaluation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-results
+          path: evaluation/*.json
+
+  # ── Test the ORE-layer cryptographic primitives ─────────────────────────────
+  # TIE/MORES/DERE self-tests run real BLS12-381 pairings (~3.5s each, pure
+  # Python, no native acceleration — see README's ORE Layer section) across
+  # several known-answer cases each, so this job runs several minutes.
+  # Separated from test-python so a slow crypto run doesn't block the fast
+  # NLP/scoring feedback loop above.
+  test-crypto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: TIE self-test (BLS12-381 pairing correctness, hand-verified algebra)
+        working-directory: crypto
+        run: python3 tie_selftest.py
+
+      - name: MORES self-test (equal/less-than/greater-than, incl. edge cases)
+        working-directory: crypto
+        run: python3 mores_selftest.py
+
+      - name: DERE self-test (UNIQUE's verified building block)
+        working-directory: crypto
+        run: python3 dere_selftest.py
+
+  # ── Test Node.js components (Chaincode + API) ───────────────────────────────
+  test-node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: chaincode/package.json
+
+      - name: Install chaincode dependencies
+        run: cd chaincode && npm install
+
+      - name: Lint chaincode
+        run: cd chaincode && npx eslint certchain.js --no-eslintrc --rule '{"no-unused-vars":"warn"}' || true
+
+      - name: MMR self-test
+        run: node chaincode/mmr.js
+
+      - name: Chaincode unit tests (mock-ledger — issuance, verification, MMR anchoring)
+        run: node chaincode/test/certchain.test.js
+
+      - name: Install API dependencies
+        run: cd api && npm install
+
+      - name: API smoke test (real server, mocked Fabric contract)
+        run: node api/test/smoke.test.js
+
+  # ── FabricVault: build, type-check, and verify it stays in sync ────────────
+  # fabricvault/ is a git submodule (see README's FabricVault Integration
+  # section) — needs `submodules: true` on checkout or this directory is
+  # empty.
+  test-fabricvault:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install FabricVault dependencies
+        working-directory: fabricvault
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check FabricVault extension
+        working-directory: fabricvault/packages/extension
+        run: npx tsc --noEmit
+
+      - name: Build FabricVault extension
+        working-directory: fabricvault/packages/extension
+        run: pnpm build
+
+      - name: decision-interpreter behavioral sync check
+        # Confirms the authoritative packages/decision-interpreter/ rules
+        # and FabricVault's two ported copies (TypeScript lib + compiled
+        # popup.js bundle) still agree on every test case. Requires Node
+        # >=22.6 for --experimental-strip-types (loads the .ts port
+        # directly, no build step or ts-node dependency).
+        run: node --experimental-strip-types scripts/check-fabricvault-sync.mjs
+
+  # ── Deploy to NRP (only on push to main) ───────────────────────────────────
+  deploy-nrp:
+    needs: [ test-python, test-node ]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure NRP kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.NRP_KUBECONFIG }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Deploy CertChain API to NRP
+        run: |
+          kubectl apply -f k8s/configmap.yaml       -n certchain
+          kubectl apply -f k8s/fabric-network.yaml  -n certchain
+          kubectl apply -f k8s/api-deployment.yaml  -n certchain
+          kubectl apply -f k8s/ipfs-deployment.yaml -n certchain
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/certchain-api -n certchain --timeout=120s
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n certchain
+          kubectl get services -n certchain

@@ -31,6 +31,7 @@
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Testing & CI](#testing--ci)
 - [Evaluation](#evaluation)
 - [Performance Benchmarking (Caliper)](#performance-benchmarking-caliper)
 - [Sampling-Based Batch Verification](#sampling-based-batch-verification)
@@ -149,15 +150,24 @@ certchain/
 │
 ├── .github/
 │   └── workflows/
-│       └── certchain.yml          # GitHub Actions CI/CD pipeline
+│       └── certchain.yml          # CI: Python/scoring tests, TIE/MORES/DERE
+│                                  # self-tests, chaincode unit tests, MMR
+│                                  # self-test, API smoke test, FabricVault
+│                                  # build + decision-interpreter sync check
+│
+├── scripts/
+│   └── check-fabricvault-sync.mjs # Behavioral consistency check, CertChain
+│                                  # vs. FabricVault's ported decision-interpreter
 │
 ├── chaincode/
 │   ├── certchain.js               # Hyperledger Fabric smart contract
 │   │                              # Contains Layer 2 weighted scoring algorithm
 │   │                              # Role-based access control, JSON-LD output
 │   │                              # Audit log, program analytics, MMR anchoring
-│   └── mmr.js                     # Merkle Mountain Range core (build/prove/verify)
-│                                  # Required by both certchain.js and api/server.js
+│   ├── mmr.js                     # Merkle Mountain Range core (build/prove/verify)
+│   │                              # Required by both certchain.js and api/server.js
+│   └── test/
+│       └── certchain.test.js      # Mock-ledger unit tests (issuance, verification, MMR)
 │
 ├── nlp/
 │   ├── bert_classifier.py         # BERT model — training and inference (Layer 1)
@@ -188,7 +198,10 @@ certchain/
 │   ├── mmr_sampling.js            # Sampling audit: sampler, confidence formula,
 │   │                              # round-loop orchestrator (shared with the
 │   │                              # evaluation harness below)
-│   └── issues.js                  # Issue-reporting flat JSON log
+│   ├── issues.js                  # Issue-reporting flat JSON log
+│   └── test/
+│       └── smoke.test.js          # Real server, mocked Fabric contract — /health,
+│                                  # /issue, /verify, /mmr/anchor end-to-end
 │
 ├── dataset/
 │   └── data_loader.py             # Synthetic dataset generator + Kaggle drop-in
@@ -477,6 +490,39 @@ curl http://localhost:3000/verify/abc123def456...
   "postQuantumSigned": true,
   "pqAlgorithm": "CRYSTALS-Dilithium3"
 }
+```
+
+---
+
+## Testing & CI
+
+All of the following are plain Node/Python scripts — no test framework dependency
+(jest/mocha/pytest) — that exit non-zero on failure and are what `.github/workflows/certchain.yml`
+actually runs on every push/PR (that file previously lived at `workflows/certchain.yml`,
+a location GitHub Actions never discovers, so none of this ran automatically until it was
+moved):
+
+```bash
+# Chaincode: mock-ledger tests (issuance accept/reject paths incl. the
+# prerequisite gate, verification incl. revocation, MMR anchor + inclusion
+# proof + tamper rejection)
+node chaincode/test/certchain.test.js
+
+# MMR primitive self-test (build/prove/verify + tamper-rejection)
+node chaincode/mmr.js
+
+# API smoke test — starts the real server with a mocked Fabric contract,
+# exercises /health, /auth, /issue, /verify/:hash, /mmr/anchor, /mmr/root
+node api/test/smoke.test.js
+
+# ORE-layer cryptographic self-tests (real BLS12-381 pairings, ~3.5s/pairing
+# — each of these takes a few minutes, see the ORE Layer section)
+cd crypto && python3 tie_selftest.py && python3 mores_selftest.py && python3 dere_selftest.py
+
+# FabricVault <-> CertChain decision-interpreter behavioral consistency
+# check (requires the fabricvault/ submodule initialized, and Node >=22.6
+# for --experimental-strip-types)
+node --experimental-strip-types scripts/check-fabricvault-sync.mjs
 ```
 
 ---
