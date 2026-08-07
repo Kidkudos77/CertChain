@@ -541,6 +541,23 @@ app.get('/student/:id', auth.requireAuth(), async (req, res) => {
     }
 });
 
+// GET /credentials
+// Lists issued credentials (with credHash) for the institution "Issued
+// Credentials" view — the prerequisite for revoking anything from the UI,
+// since revokeCredential() needs a credHash and there was previously no
+// way to discover one without already having it from issuance time.
+app.get('/credentials', auth.requireAuth(['institution', 'admin']), async (req, res) => {
+    try {
+        const { contract, gateway } = await getContract(req.session.fabricID);
+        const result = await contract.evaluateTransaction('getAllCredentials', String(req.query.limit || ''));
+        await gateway.disconnect();
+        return res.json(JSON.parse(result.toString()));
+    } catch(e) {
+        console.error({ id: req.id, route: '/credentials', error: e.message });
+        return res.status(500).json({ error: safeError(e) });
+    }
+});
+
 // POST /revoke
 app.post('/revoke', auth.requireAuth(['institution', 'admin']), async (req, res) => {
     const { credHash, reason } = req.body || {};

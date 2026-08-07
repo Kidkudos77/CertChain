@@ -411,8 +411,16 @@ class CertChain extends Contract {
     }
 
     // ── Get all credentials for a student ─────────────────────────────────────
+    // Role set mirrors verifyCredential() (which this wraps per-hash) rather
+    // than issuance/revocation's narrower set — VERIFIER must be allowed here
+    // too, since this is exactly what backs the employer "Search Candidate"
+    // flow (GET /student/:id, called by verifier-role users). Found missing
+    // via a real browser-driven test of that flow, which the GUI's demo-mode
+    // fallback had been silently masking (api/server.js's route itself
+    // permits any authenticated role; only this chaincode-level gate was
+    // out of sync with it).
     async getStudentCredentials(ctx, studentID) {
-        this._assertRole(ctx, [ROLES.STUDENT, ROLES.INSTITUTION, ROLES.ADMIN]);
+        this._assertRole(ctx, [ROLES.STUDENT, ROLES.INSTITUTION, ROLES.ADMIN, ROLES.VERIFIER]);
         const results = [];
         const it      = await ctx.stub.getStateByPartialCompositeKey(
             'student~hash', [studentID]
@@ -424,6 +432,37 @@ class CertChain extends Contract {
             r = await it.next();
         }
         return JSON.stringify(results);
+    }
+
+    // ── List all issued credentials (Institution/Admin only) ──────────────────
+    // Backs the institution "Issued Credentials" view — the credHash is what
+    // an institution needs on hand to call revokeCredential(); prior to this
+    // there was no way to list what's actually been issued, so revocation was
+    // reachable via the chaincode/API layer but not from anywhere a caller
+    // could discover a credHash to revoke.
+    async getAllCredentials(ctx, limit) {
+        this._assertRole(ctx, [ROLES.INSTITUTION, ROLES.ADMIN]);
+        const maxResults = parseInt(limit || '200');
+        const results = [];
+        const it = await ctx.stub.getStateByRange('CRED~', 'CRED~\uFFFF');
+        let r = await it.next();
+        while (!r.done && results.length < maxResults) {
+            const credHash = r.value.key.substring('CRED~'.length);
+            const c = JSON.parse(r.value.value.toString());
+            results.push({
+                credHash,
+                credentialID:     c.credentialID,
+                studentID:        c.studentID,
+                program:          c.program,
+                status:           c.status,
+                issuedAt:         c.issuedAt,
+                revokedAt:        c.revokedAt,
+                revocationReason: c.revocationReason,
+            });
+            r = await it.next();
+        }
+        results.sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
+        return JSON.stringify({ count: results.length, credentials: results });
     }
 
     // ── Revoke ─────────────────────────────────────────────────────────────────
