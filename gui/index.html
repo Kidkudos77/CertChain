@@ -994,6 +994,7 @@ function setText(el, str) {
   </main>
 </div>
 
+<script src="vendor/qrcode.js"></script>
 <script>
 'use strict';
 
@@ -1199,9 +1200,9 @@ async function logout() {
 // ─── NAV BUILDER ──────────────────────────────────────────────────────────────
 const TABS = {
   student:     [['s-home','My Portal',stuHome],['s-creds','My Credentials',stuCreds],['s-status','Eligibility',stuStatus],['s-account','My Account',accountPage]],
-  institution: [['i-sub','Submit Transcript',iSubmit],['i-stud','Students',iStudents],['i-bulk','Bulk Issue',iBulk],['i-account','My Account',accountPage]],
+  institution: [['i-sub','Submit Transcript',iSubmit],['i-stud','Students',iStudents],['i-bulk','Bulk Issue',iBulk],['i-issued','Issued Credentials',iIssued],['i-account','My Account',accountPage]],
   employer:    [['e-verify','Verify',eVerify],['e-search','Search Candidate',eSearch],['e-account','My Account',accountPage]],
-  admin:       [['a-dash','Dashboard',aDash],['a-approvals','Approvals',aApprovals],['a-sub','Submit',iSubmit],['a-stud','Students',iStudents],['a-nlp','NLP Testing',aNLP],['a-quantum','Quantum',aQuantum],['a-analytics','Analytics',aAnalytics],['a-system','System/RBAC',aSystem],['a-hpc','HPC/NRP',aHPC],['a-settings','Settings',aSettings],['a-account','My Account',accountPage]],
+  admin:       [['a-dash','Dashboard',aDash],['a-approvals','Approvals',aApprovals],['a-sub','Submit',iSubmit],['a-stud','Students',iStudents],['a-issued','Issued Credentials',iIssued],['a-nlp','NLP Testing',aNLP],['a-quantum','Quantum',aQuantum],['a-analytics','Analytics',aAnalytics],['a-system','System/RBAC',aSystem],['a-hpc','HPC/NRP',aHPC],['a-settings','Settings',aSettings],['a-account','My Account',accountPage]],
 };
 
 function buildNav() {
@@ -1223,6 +1224,8 @@ function showTab(id, btn) {
   btn.classList.add('active');
   if (id==='a-approvals') renderApprovals();
   if (id==='i-sub' || id==='a-sub') setTimeout(upPrev, 50);
+  if (id==='i-issued' || id==='a-issued') loadIssuedCredentials();
+  if (id==='s-creds') loadStudentCredentials();
 }
 
 // ═══════════════════ STUDENT ═══════════════════
@@ -1363,6 +1366,12 @@ function iBulk(){ return `
   <div class="card"><div class="ch"><span class="ct">Summary</span></div>
     <div class="g2" style="gap:10px"><div class="met"><div class="ml">Eligible</div><div class="mv">152</div><div class="ms">Will issue</div></div><div class="met"><div class="ml">Not Eligible</div><div class="mv" style="color:#FF7B6B">48</div><div class="ms">Skipped</div></div></div>
   </div>
+</div>`}
+
+function iIssued(){ return `
+<div class="wbanner"><div><div class="wt">Issued Credentials</div><div class="ws">Revoke a previously issued credential</div></div><div class="wr"><div class="wrl">${RDATA[curRole]?.label}</div><div class="wri">${esc(curUser)}</div></div></div>
+<div class="card"><div class="ch"><span class="ct">All Issued Credentials</span><button class="btn btn-secondary btn-sm" onclick="loadIssuedCredentials()">Refresh</button></div>
+  <div id="icl"><div style="text-align:center;color:var(--text3);padding:24px;font-size:0.9375rem">Loading…</div></div>
 </div>`}
 
 // ═══════════════════ EMPLOYER ═══════════════════
@@ -2001,6 +2010,55 @@ async function doSrch() {
   }
 }
 
+// ─── ISSUED CREDENTIALS (Institution/Admin) ────────────────────────────────
+const DEMO_ISSUED_CREDENTIALS = [
+  { credHash:'201b035bde6c0a4ef519b84546f4b49efe28028a99621f5f64dce9cf5f0e2aa', credentialID:'CERTCHAIN-FAMU10001-a1b2c3d4', studentID:'FAMU10001', status:'ACTIVE', issuedAt:new Date(Date.now()-86400000*3).toISOString(), revokedAt:null, revocationReason:null },
+  { credHash:'3f6a9e0c1d2b5847f0e9c8a7b6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7', credentialID:'CERTCHAIN-FAMU10002-b2c3d4e5', studentID:'FAMU10002', status:'ACTIVE', issuedAt:new Date(Date.now()-86400000*2).toISOString(), revokedAt:null, revocationReason:null },
+  { credHash:'8c7b6a5948372615f4e3d2c1b0a9887766554433221100ffeeddccbbaa99887', credentialID:'CERTCHAIN-FAMU10004-c3d4e5f6', studentID:'FAMU10004', status:'REVOKED', issuedAt:new Date(Date.now()-86400000*5).toISOString(), revokedAt:new Date(Date.now()-86400000*1).toISOString(), revocationReason:'Issued in error' },
+];
+
+async function loadIssuedCredentials() {
+  const el=document.getElementById('icl'); if(!el)return;
+  el.innerHTML='<div style="text-align:center;color:var(--text3);padding:24px;font-size:0.9375rem">Loading…</div>';
+  try {
+    const {ok,data}=await apiFetch('/credentials');
+    if(ok && Array.isArray(data.credentials)) renderIssuedCredentials(data.credentials, false);
+    else renderIssuedCredentials(DEMO_ISSUED_CREDENTIALS, true);
+  } catch { renderIssuedCredentials(DEMO_ISSUED_CREDENTIALS, true); }
+}
+
+function renderIssuedCredentials(list, demo) {
+  const el=document.getElementById('icl'); if(!el)return;
+  if(!list.length){ el.innerHTML='<div style="text-align:center;color:var(--text3);padding:24px;font-size:0.9375rem">No credentials issued yet.</div>'; return; }
+  el.innerHTML=`${demo?'<div class="fs11 td" style="margin-bottom:8px">Demo mode — API offline, showing sample data</div>':''}
+  <div style="overflow-x:auto">
+  <table class="tbl" aria-label="Issued credentials">
+    <thead><tr><th>Credential ID</th><th>Student</th><th>Issued</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody>
+      ${list.map(c=>`<tr>
+        <td data-label="Credential ID" class="mono" style="font-size:0.6875rem">${esc(c.credentialID||'—')}</td>
+        <td data-label="Student" class="mono">${esc(c.studentID||'—')}</td>
+        <td data-label="Issued" style="font-size:0.75rem">${c.issuedAt?new Date(c.issuedAt).toLocaleDateString():'—'}</td>
+        <td data-label="Status">${c.status==='ACTIVE'?'<span class="bdg bok">Active</span>':'<span class="bdg berr">Revoked</span>'}</td>
+        <td data-label="Action">${c.status==='ACTIVE'
+          ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><input type="text" id="rr-${esc(c.credHash)}" class="mono" placeholder="Reason" style="width:120px;font-size:0.75rem" aria-label="Revocation reason for ${esc(c.credentialID||c.credHash)}"><button class="btn btn-danger btn-sm" onclick="revokeCred('${esc(c.credHash)}')">Revoke</button></div>`
+          : `<span class="fs11 td">${esc(c.revocationReason||'No reason on file')}</span>`}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+  </div>`;
+}
+
+async function revokeCred(hash) {
+  const input=document.getElementById('rr-'+hash);
+  const reason=(input?.value||'').trim()||'No reason provided';
+  try {
+    const {ok,data}=await apiFetch('/revoke', { method:'POST', body:JSON.stringify({credHash:hash, reason}) });
+    if(ok && data.success!==false){ toast('Credential revoked','#FF7B6B'); loadIssuedCredentials(); }
+    else toast(data.error||'Revoke failed','#F47B20');
+  } catch { toast('Revoke failed — API offline','#F47B20'); }
+}
+
 function tnlp() { const t=document.getElementById('nlpin')?.value.trim(); if(!t)return; sNLP(clf(t)); }
 function qn(t)  { if(document.getElementById('nlpin'))document.getElementById('nlpin').value=t; tnlp(); }
 
@@ -2062,7 +2120,56 @@ function demoStud() {
     +'<div style="background:var(--surface3);border-radius:4px;padding:7px 10px;margin-top:8px">'
     +'<div class="fs11 td">Hash: <span class="mono" style="color:var(--text2)">'
     +hashVal.substring(0,52)+'...</span></div>'
-    +'</div></div></div>';
+    +'</div>'
+    +'<div class="fs11 td" style="text-align:center;margin-top:10px">Scan to open the verify link — an employer can check this credential without trusting you directly</div>'
+    +'<div id="qr-'+hashVal+'" style="margin-top:6px;display:flex;justify-content:center"></div>'
+    +'</div></div>';
+  renderCredentialQR('qr-'+hashVal, hashVal);
+}
+
+// ─── STUDENT: live credential list + QR ────────────────────────────────────
+async function loadStudentCredentials() {
+  const el=document.getElementById('scl'); if(!el || !curUser)return;
+  try {
+    const {ok,data}=await apiFetch('/student/'+encodeURIComponent(curUser));
+    if(ok && Array.isArray(data) && data.length>0) renderStudentCredentials(data);
+    // Empty/offline: leave the existing "No credentials issued yet / View Demo" placeholder in place.
+  } catch { /* leave placeholder */ }
+}
+
+function renderStudentCredentials(list) {
+  const el=document.getElementById('scl'); if(!el)return;
+  el.innerHTML=list.map(d=>{
+    const hash=d.credentialHash||'';
+    const valid=d.isValid!==false;
+    return `<div class="ccard" style="margin-bottom:10px"><div class="cch">
+      <div><div class="fs14 fw6">${esc(d.identifier||'CertChain Credential')}</div><div class="fs13 tm">FAMU · Cyber Defense Certificate</div></div>
+      <div style="display:flex;gap:5px"><span class="bdg ${valid?'bok':'berr'}">${valid?'VALID':esc(d.credentialStatus||'INVALID')}</span>${d.postQuantumSigned?'<span class="bdg borg">PQ Signed</span>':''}</div>
+      </div><div class="ccb">
+      <div class="ccf"><span class="ccfl">Program</span><span class="ccfv">${esc(d.educationalProgram||'FAMU-FCCS')}</span></div>
+      <div class="ccf"><span class="ccfl">Courses</span><span class="ccfv" style="font-size:0.6875rem">${esc((d.competencyRequired||[]).join(', '))}</span></div>
+      <div class="ccf"><span class="ccfl">Score</span><span class="ccfv ta">${(d.eligibilityScore||0).toFixed(4)}</span></div>
+      <div class="ccf"><span class="ccfl">Issued</span><span class="ccfv" style="font-size:0.75rem">${d.dateCreated?new Date(d.dateCreated).toLocaleDateString():'—'}</span></div>
+      <div style="background:var(--surface3);border-radius:4px;padding:7px 10px;margin-top:8px"><div class="fs11 td">Hash: <span class="mono" style="font-size:0.625rem;color:var(--text2)">${esc(hash.substring(0,52))}...</span></div></div>
+      ${hash?`<div class="fs11 td" style="text-align:center;margin-top:10px">Scan to open the verify link — an employer can check this credential without trusting you directly</div><div id="qr-${esc(hash)}" style="margin-top:6px;display:flex;justify-content:center"></div>`:''}
+      </div></div>`;
+  }).join('');
+  list.forEach(d=>{ if(d.credentialHash) renderCredentialQR('qr-'+d.credentialHash, d.credentialHash); });
+}
+
+// Renders a scannable QR (verify URL) into containerId using the vendored
+// qrcode-generator library (gui/vendor/qrcode.js) — verified via a real
+// encode->decode round-trip (jsQR) against verify-URL-length payloads
+// before vendoring, not just visually inspected.
+function renderCredentialQR(containerId, credHash) {
+  const el=document.getElementById(containerId);
+  if(!el || typeof qrcode!=='function' || !credHash)return;
+  try {
+    const qr=qrcode(0,'M');
+    qr.addData(getAPIBase()+'/verify/'+credHash);
+    qr.make();
+    el.innerHTML=qr.createSvgTag(4,8);
+  } catch { /* leave blank rather than a broken QR */ }
 }
 
 function cpH() {

@@ -36,6 +36,7 @@
 - [Performance Benchmarking (Caliper)](#performance-benchmarking-caliper)
 - [Sampling-Based Batch Verification](#sampling-based-batch-verification)
 - [Issue Reporting](#issue-reporting)
+- [Credential Revocation & QR Sharing](#credential-revocation--qr-sharing)
 - [Explainability Layer](#explainability-layer)
 - [FabricVault Integration](#fabricvault-integration)
 - [ORE Layer (Phase 7 — cryptographic core implemented, pending independent review)](#ore-layer-phase-7--cryptographic-core-implemented-pending-independent-review)
@@ -454,7 +455,8 @@ listed courses) is correct as implemented — no code change needed.
 | `POST` | `/transcripts/upload` | institution | Upload PDF/DOCX/TXT transcript — extracts text, runs it through the full pipeline asynchronously |
 | `GET`  | `/transcripts/status/:uploadID` | institution | Poll an upload's processing status/result |
 | `GET`  | `/verify/:hash` | verifier | Verify credential — returns JSON-LD |
-| `GET`  | `/student/:id` | student | All credentials for a student |
+| `GET`  | `/student/:id` | student, institution, admin, verifier | All credentials for a student (verifier access backs the employer "Search Candidate" flow) |
+| `GET`  | `/credentials?limit=` | institution | List all issued credentials with their credHash — what the institution "Issued Credentials" UI uses to find something to revoke |
 | `POST` | `/revoke` | institution | Revoke a credential |
 | `GET`  | `/analytics?as=...` | institution | Program-level analytics |
 | `GET`  | `/mmr/unanchored?since=...` | institution | Credentials not yet in an MMR batch |
@@ -512,7 +514,8 @@ node chaincode/test/certchain.test.js
 node chaincode/mmr.js
 
 # API smoke test — starts the real server with a mocked Fabric contract,
-# exercises /health, /auth, /issue, /verify/:hash, /mmr/anchor, /mmr/root
+# exercises /health, /auth, /issue, /verify/:hash, /student/:id,
+# /credentials, /revoke, /mmr/anchor, /mmr/root
 node api/test/smoke.test.js
 
 # ORE-layer cryptographic self-tests (real BLS12-381 pairings, ~3.5s/pairing
@@ -680,6 +683,48 @@ involvement and no new RBAC role: `api/issues.js` is a flat, atomically-written 
 (`api/issues.json`, created on first use), the same pattern `api/auth.js` already uses for
 `users.json`. Admins list (`GET /issues`) and update status (`PATCH /issues/:id`,
 `open`/`in-progress`/`resolved`).
+
+---
+
+## Credential Revocation & QR Sharing
+
+Both existed at the chaincode/API layer well before there was any UI reachable path to
+them — `revokeCredential()` (chaincode) and `POST /revoke` (API) were built early on, but
+nothing in `gui/index.html` ever called `POST /revoke`, and no student-facing QR sharing
+existed anywhere in the codebase. Both gaps are closed now.
+
+**Institution revocation** — `gui/index.html`'s institution and admin roles get a new
+"Issued Credentials" tab (`iIssued()`), backed by a new `getAllCredentials()` chaincode
+method and `GET /credentials` endpoint (institution/admin-gated). It lists every issued
+credential with its status; each active row gets a reason field and a Revoke button wired
+to the existing `POST /revoke`. Building this listing endpoint also surfaced two real,
+previously-untested bugs, both fixed:
+- `getStudentCredentials()` (backs `GET /student/:id`, which the employer "Search
+  Candidate" flow calls with a `verifier`-role token) was missing `VERIFIER` from its
+  role gate — that flow would have 500'd against real chaincode, silently masked by the
+  GUI's offline demo-mode fallback. Found via a real browser-driven test, not just reading
+  the code.
+- Neither `chaincode/test/certchain.test.js`'s nor `api/test/smoke.test.js`'s mock ledger
+  implemented `ChaincodeStub.splitCompositeKey()`, so `getStudentCredentials()` — and by
+  extension `GET /student/:id` — had zero test coverage in either suite despite backing a
+  real, already-shipped feature. Both mocks and both suites now cover it.
+
+**Student QR sharing** — the student "My Credentials" view and FabricVault's post-sign
+result both render a scannable QR code, using [`qrcode-generator`](https://github.com/kazuhikoarase/qrcode-generator)
+2.0.4 (MIT, Kazuhiko Arase) vendored directly (`gui/vendor/qrcode.js`,
+`fabricvault/chrome-extension/vendor/qrcode.js` — no build step, no CDN dependency) rather
+than pulled from npm at runtime. Vendoring an unmodified copy was verified before commit
+with a real encode→decode round-trip (`jsQR`) against verify-URL-length payloads, not just
+visual inspection. The two surfaces encode different things because they have different
+knowledge available to them:
+- **GUI** (`renderCredentialQR()`) encodes a full verify URL — `${getAPIBase()}/verify/<hash>`
+  — since the GUI knows its own configured API base and the QR should be directly
+  actionable for whoever scans it.
+- **FabricVault** (`renderCredHashQr()` in `chrome-extension/popup.js`) encodes just the
+  raw credential hash after a successful sign, since the wallet has no configured
+  knowledge of a verify-URL base for whatever CertChain deployment it's talking to —
+  encoding a guessed/hardcoded URL would be inaccurate, so it encodes only what it
+  actually and reliably knows.
 
 ---
 

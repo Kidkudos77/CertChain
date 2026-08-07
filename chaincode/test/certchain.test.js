@@ -34,12 +34,34 @@ class MockStub {
     getTxID() { return 'tx' + (this.txCounter++); }
     setEvent() {}
     createCompositeKey(prefix, parts) { return `${prefix} ${parts.join(' ')}`; }
+    // Inverse of createCompositeKey above — real fabric-shim uses \x00
+    // delimiters and a length-prefixed encoding; this mock's composite keys
+    // are plain space-joined strings (see the certchain.test.js NUL-byte
+    // fix), so splitting on ' ' is the correct inverse for THIS mock.
+    splitCompositeKey(key) {
+        const parts = key.split(' ');
+        return { objectType: parts[0], attributes: parts.slice(1) };
+    }
     async getStateByPartialCompositeKey(prefix, parts) {
         const searchPrefix = `${prefix} ${parts.join(' ')}`;
         const matches = [];
         for (const [key, value] of this.state.entries()) {
-            if (key.startsWith(searchPrefix)) matches.push({ value: Buffer.from(value) });
+            if (key.startsWith(searchPrefix)) matches.push({ key, value: Buffer.from(value) });
         }
+        let i = 0;
+        return {
+            next: async () => (i < matches.length ? { value: matches[i++], done: false } : { done: true }),
+            close: async () => {},
+        };
+    }
+    // Real fabric-shim returns keys in lexicographic order — sorted here so
+    // range-scanning code (getAllCredentials, getProgramAnalytics, etc.)
+    // exercises the same ordering assumption it would against a real ledger.
+    async getStateByRange(startKey, endKey) {
+        const matches = [...this.state.entries()]
+            .filter(([key]) => key >= startKey && key < endKey)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([key, value]) => ({ key, value: Buffer.from(value) }));
         let i = 0;
         return {
             next: async () => (i < matches.length ? { value: matches[i++], done: false } : { done: true }),
@@ -144,6 +166,76 @@ async function testVerification(contract) {
     }
 }
 
+async function testGetStudentCredentials(contract) {
+    console.log('\n--- getStudentCredentials ---');
+    const issueCtx = mockCtx('institution');
+    const issued1 = await issue(contract, issueCtx, 'FAMU50001');
+    const issued2 = await issue(contract, issueCtx, 'FAMU50001', { gpa: 3.9 });
+    await issue(contract, issueCtx, 'FAMU50002'); // different student — must not leak in
+
+    const studentCtx = mockCtx('student', 'x509::CN=FAMU50001');
+    studentCtx.stub.state = issueCtx.stub.state;
+    const raw = await contract.getStudentCredentials(studentCtx, 'FAMU50001');
+    const results = JSON.parse(raw);
+    const hashes = results.map(r => r.credentialHash);
+
+    assert(results.length === 2, 'getStudentCredentials returns exactly this student\'s 2 credentials');
+    assert(hashes.includes(issued1.credHash) && hashes.includes(issued2.credHash),
+        'both of the student\'s credential hashes are present');
+    assert(results.every(r => r.isValid === true), 'both returned credentials verify as valid');
+
+    // Backs the employer "Search Candidate" flow (GET /student/:id) — a
+    // verifier must be able to call this, not just the student/institution/
+    // admin. Regression check for a real role-gate gap found via a live
+    // browser-driven test.
+    const verifierCtx = mockCtx('verifier');
+    verifierCtx.stub.state = issueCtx.stub.state;
+    const verifierRaw = await contract.getStudentCredentials(verifierCtx, 'FAMU50001');
+    assert(JSON.parse(verifierRaw).length === 2, 'verifier role can call getStudentCredentials (employer candidate search)');
+}
+
+async function testListAndRevoke(contract) {
+    console.log('\n--- getAllCredentials + revokeCredential ---');
+    const issueCtx = mockCtx('institution');
+    const issued1 = await issue(contract, issueCtx, 'FAMU40001');
+    const issued2 = await issue(contract, issueCtx, 'FAMU40002', { gpa: 3.5 });
+
+    {
+        const listCtx = mockCtx('institution');
+        listCtx.stub.state = issueCtx.stub.state;
+        const raw = await contract.getAllCredentials(listCtx);
+        const result = JSON.parse(raw);
+        const hashes = result.credentials.map(c => c.credHash);
+        assert(hashes.includes(issued1.credHash) && hashes.includes(issued2.credHash),
+            'getAllCredentials lists issued credentials including their credHash');
+        assert(result.credentials.every(c => c.status === 'ACTIVE'),
+            'freshly issued credentials list as ACTIVE');
+    }
+    {
+        const studentCtx = mockCtx('student');
+        studentCtx.stub.state = issueCtx.stub.state;
+        let threw = false;
+        try { await contract.getAllCredentials(studentCtx); }
+        catch (e) { threw = true; }
+        assert(threw, 'student role cannot list all credentials (role gate enforced)');
+    }
+    {
+        const revokeCtx = mockCtx('institution');
+        revokeCtx.stub.state = issueCtx.stub.state;
+        await contract.revokeCredential(revokeCtx, issued1.credHash, 'Duplicate issuance');
+
+        const listCtx = mockCtx('institution');
+        listCtx.stub.state = issueCtx.stub.state;
+        const raw = await contract.getAllCredentials(listCtx);
+        const result = JSON.parse(raw);
+        const revoked = result.credentials.find(c => c.credHash === issued1.credHash);
+        assert(revoked.status === 'REVOKED' && revoked.revocationReason === 'Duplicate issuance',
+            'getAllCredentials reflects revocation status and reason after revokeCredential');
+        const stillActive = result.credentials.find(c => c.credHash === issued2.credHash);
+        assert(stillActive.status === 'ACTIVE', 'revoking one credential does not affect others');
+    }
+}
+
 async function testMMR(contract) {
     console.log('\n--- MMR anchoring + inclusion proof ---');
     const ctx = mockCtx('institution');
@@ -186,6 +278,8 @@ async function testMMR(contract) {
 (async () => {
     const contract = await testIssuance();
     await testVerification(contract);
+    await testGetStudentCredentials(contract);
+    await testListAndRevoke(contract);
     await testMMR(contract);
 
     console.log('\n' + (failures === 0 ? 'ALL CHAINCODE TESTS PASSED' : `${failures} FAILURE(S)`));

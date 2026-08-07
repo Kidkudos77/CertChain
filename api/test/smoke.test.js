@@ -41,12 +41,28 @@ const mockStub = {
     getTxID: () => 'tx' + (txCounter++),
     setEvent: () => {},
     createCompositeKey: (prefix, parts) => `${prefix} ${parts.join(' ')}`,
+    // Inverse of createCompositeKey above — matches the plain space-joined
+    // format this mock actually produces (not real fabric-shim's \x00
+    // delimited encoding). Needed by getStudentCredentials, which backs
+    // GET /student/:id.
+    splitCompositeKey: (key) => {
+        const parts = key.split(' ');
+        return { objectType: parts[0], attributes: parts.slice(1) };
+    },
     getStateByPartialCompositeKey: async (prefix, parts) => {
         const searchPrefix = `${prefix} ${parts.join(' ')}`;
         const matches = [];
         for (const [key, value] of mockLedger.entries()) {
-            if (key.startsWith(searchPrefix)) matches.push({ value: Buffer.from(value) });
+            if (key.startsWith(searchPrefix)) matches.push({ key, value: Buffer.from(value) });
         }
+        let i = 0;
+        return { next: async () => (i < matches.length ? { value: matches[i++], done: false } : { done: true }), close: async () => {} };
+    },
+    getStateByRange: async (startKey, endKey) => {
+        const matches = [...mockLedger.entries()]
+            .filter(([key]) => key >= startKey && key < endKey)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([key, value]) => ({ key, value: Buffer.from(value) }));
         let i = 0;
         return { next: async () => (i < matches.length ? { value: matches[i++], done: false } : { done: true }), close: async () => {} };
     },
@@ -135,6 +151,24 @@ async function run() {
             assert(r.status === 200 && body.isValid === true, 'GET /verify/:hash confirms the issued credential is valid');
         }
 
+        // GET /student/:id
+        currentRole = 'verifier';
+        {
+            const r = await fetch(`${BASE}/student/${encodeURIComponent(`FAMU-SMOKE-${suffix}`)}`, { headers: { Authorization: `Bearer ${verifierToken}` } });
+            const body = await r.json();
+            assert(r.status === 200 && Array.isArray(body) && body.some(c => c.credentialHash === credHash),
+                `GET /student/:id returns the just-issued credential (got ${r.status})`);
+        }
+
+        // GET /credentials
+        currentRole = 'institution';
+        {
+            const r = await fetch(`${BASE}/credentials`, { headers: { Authorization: `Bearer ${instToken}` } });
+            const body = await r.json();
+            assert(r.status === 200 && body.credentials.some(c => c.credHash === credHash),
+                'GET /credentials lists the just-issued credential');
+        }
+
         // POST /mmr/anchor + GET /mmr/root/:batchId
         currentRole = 'institution';
         const batchId = `smoke-batch-${suffix}`;
@@ -151,6 +185,23 @@ async function run() {
             const r = await fetch(`${BASE}/mmr/root/${batchId}`, { headers: { Authorization: `Bearer ${instToken}` } });
             const body = await r.json();
             assert(r.status === 200 && body.batchId === batchId, 'GET /mmr/root/:batchId returns the just-anchored root');
+        }
+
+        // POST /revoke (after MMR anchoring, so anchoring itself is exercised
+        // against a still-ACTIVE credential — the more realistic ordering)
+        {
+            const r = await fetch(`${BASE}/revoke`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${instToken}` },
+                body: JSON.stringify({ credHash, reason: 'Smoke test revocation' }),
+            });
+            const body = await r.json();
+            assert(r.status === 200 && body.status === 'REVOKED', `POST /revoke revokes the credential (got ${r.status})`);
+        }
+        {
+            const r = await fetch(`${BASE}/credentials`, { headers: { Authorization: `Bearer ${instToken}` } });
+            const body = await r.json();
+            const entry = body.credentials.find(c => c.credHash === credHash);
+            assert(entry && entry.status === 'REVOKED', 'GET /credentials reflects the revocation');
         }
 
         console.log('\n' + (failures === 0 ? 'ALL API SMOKE TESTS PASSED' : `${failures} FAILURE(S)`));
