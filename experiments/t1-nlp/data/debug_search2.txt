@@ -1,0 +1,33 @@
+POST status: 200, length: 8086366
+Tables found: 2
+
+--- Table 0: 8 rows ---
+  Header: ['']
+  Row: ['FROM School:', '-----\xa0\xa0Select College/University\xa0\xa0----------\xa0\xa0COMM']
+  Row: ['Department:', '-- Any --AHSANTATMBIOBUSCHMCISCOMCRJCULDANECEECOED']
+  Row: ['Course:', '-- Any --AHS 103 - Nutritional Awareness (1 credit']
+  Row: ['']
+  Row: ['TO School:', '-- Any Public College/University ---- Any Communit']
+
+--- Table 1: 7410 rows ---
+  Header: ['FROM', 'Course Code', 'Course Name', 'Credits', 'Gen Ed Requirement[key]', '', 'To', 'Course Code', 'Course Name', 'CreditsTransferred', 'Note']
+  Row: ['Berkshire', 'AHS 103', 'Nutritional Awareness', '1', '-', '', 'Bristol', '', 'Biology Elective', '1', '']
+  Row: ['Berkshire', 'AHS 103', 'Nutritional Awareness', '1', '-', '', 'Bunker Hill', '', 'Biology Elective', '1', '']
+  Row: ['Berkshire', 'AHS 103', 'Nutritional Awareness', '1', '-', '', 'Cape Cod', '', 'Elective', '1', '']
+  Row: ['Berkshire', 'AHS 103', 'Nutritional Awareness', '1', '-', '', 'Fitchburg', '', 'Biology Elective', '1', '']
+  Row: ['Berkshire', 'AHS 103', 'Nutritional Awareness', '1', '-', '', 'Holyoke', '', 'Biology Elective', '1', '']
+
+Department dropdown: 40 options
+  : -- Any --
+  AHS: AHS
+  ANT: ANT
+  ATM: ATM
+  BIO: BIO
+  BUS: BUS
+  CHM: CHM
+  CIS: CIS
+  COM: COM
+  CRJ: CRJ
+  EQ text: Home> Tools >Course Equivalency Database> 
+    
+	Search by Sending/From Institution
