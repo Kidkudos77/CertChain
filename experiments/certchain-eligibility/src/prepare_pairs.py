@@ -85,19 +85,16 @@ def main():
     logger.info(f"Generated {len(pairs)} total course-requirement pairs")
     logger.info(f"  ({len(courses)} courses × {len(req_ids_with_prereq)} requirements)")
 
-    # Sample 100 courses by seed, then generate all 6 targets for each = 600 pairs
+    # Option B: label ALL courses. No train/test split — method requires no training data.
+    # Threshold selection via leave-one-course-out. Entire labeled set is evaluation.
     import random
     labeling_cfg = config.get("labeling", {})
-    n_courses = 100  # complete blocks
     shuffle_seed = labeling_cfg.get("shuffle_seed_pass1", 42)
     random.seed(shuffle_seed)
 
-    if len(courses) <= n_courses:
-        sampled_courses = courses
-    else:
-        sampled_courses = random.sample(courses, n_courses)
+    sampled_courses = courses  # ALL courses, no sampling
 
-    # Generate complete blocks: every sampled course × all 6 targets
+    # Generate complete blocks: every course × all 6 targets
     test_pairs = []
     for course in sampled_courses:
         for req_id in req_ids_with_prereq:
@@ -110,10 +107,11 @@ def main():
                 "requirement_id": req_id,
             })
 
-    # Shuffle the test set order (within blocks are already grouped, shuffle across)
+    # Shuffle the pair order (not grouped by course during labeling)
     random.shuffle(test_pairs)
 
     logger.info(f"\nTest set: {len(sampled_courses)} courses × {len(req_ids_with_prereq)} targets = {len(test_pairs)} pairs")
+    logger.info(f"  (Complete pool — no sampling, no train/test split)")
 
     # Write test set template (CSV for labeling)
     import csv
@@ -129,8 +127,13 @@ def main():
 
     logger.info(f"Test set template: {test_csv_path}")
     logger.info(f"  {len(test_pairs)} pairs to label (seed={shuffle_seed})")
-    logger.info(f"  Structure: 100 courses × 6 targets (complete blocks)")
-    logger.info(f"  Copy to test_set_pass1.csv and fill the 'label' column (0/1).")
+    logger.info(f"  Structure: {len(sampled_courses)} courses × 6 targets (complete blocks)")
+
+    # Also write directly as test_set_pass1.csv (ready to label)
+    pass1_path = PROJECT_DIR / "data" / "labels" / "test_set_pass1.csv"
+    import shutil
+    shutil.copy2(test_csv_path, pass1_path)
+    logger.info(f"  Copied to: {pass1_path} (fill 'label' column, log date when done)")
     logger.info(f"Output: {output_path}")
     logger.info("")
     logger.info("STOP: Labels must be human-supplied before proceeding to evaluation.")

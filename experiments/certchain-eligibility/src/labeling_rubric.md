@@ -47,7 +47,8 @@ given only the course name, code, credit hours, and granting institution.
   `CIS 228/244/247`) are excluded from the sample. You will not encounter them.
 
 - **Replaced/discontinued courses** are still labeled. A student may present
-  a discontinued course from their transcript.
+  a discontinued course from their transcript. The `status` column is
+  informational only — it must NOT influence your label. Judge content, not status.
 
 ## Edge Cases
 

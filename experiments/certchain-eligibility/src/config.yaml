@@ -59,9 +59,10 @@ simulation:
 
 # Labeling protocol
 labeling:
-  total_pairs: 600
+  design: "Option B — label all 156 courses (936 pairs). No train/test split. Zero-shot method requires no training data. Threshold via leave-one-course-out."
+  total_pairs: 936
   retest_fraction: 0.40
-  retest_n: 240
+  retest_n: 374
   minimum_gap_days: 7
   shuffle_seed_pass1: 42
   shuffle_seed_pass2: 99
@@ -69,4 +70,4 @@ labeling:
   pass1_dates: []       # e.g. ["2026-08-15", "2026-08-16"]
   pass2_dates: []       # e.g. ["2026-08-23"]
   rubric_reviewer: ""   # e.g. "Dr. Chi, circulated 2026-08-14"
-  kappa_threshold: 0.61 # minimum acceptable kappa
+  kappa_threshold: 0.61 # minimum acceptable kappa (interpret with PABAK)
