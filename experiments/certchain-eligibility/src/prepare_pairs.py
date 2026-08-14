@@ -73,24 +73,38 @@ def main():
     logger.info(f"Generated {len(pairs)} total course-requirement pairs")
     logger.info(f"  ({len(courses)} courses × {len(req_ids_with_prereq)} requirements)")
 
-    # Sample 600 pairs for the test set (seeded)
+    # Sample 100 courses by seed, then generate all 6 targets for each = 600 pairs
     import random
     labeling_cfg = config.get("labeling", {})
-    n_test = labeling_cfg.get("total_pairs", 600)
+    n_courses = 100  # complete blocks
     shuffle_seed = labeling_cfg.get("shuffle_seed_pass1", 42)
     random.seed(shuffle_seed)
 
-    if len(pairs) <= n_test:
-        test_pairs = pairs
+    if len(courses) <= n_courses:
+        sampled_courses = courses
     else:
-        test_pairs = random.sample(pairs, n_test)
+        sampled_courses = random.sample(courses, n_courses)
 
-    # Shuffle the test set order
+    # Generate complete blocks: every sampled course × all 6 targets
+    test_pairs = []
+    for course in sampled_courses:
+        for req_id in req_ids_with_prereq:
+            test_pairs.append({
+                "sending_institution": course["sending_institution"],
+                "sending_course_code": course["sending_course_code"],
+                "sending_course_name": course["sending_course_name"],
+                "sending_credits": course["sending_credits"],
+                "requirement_id": req_id,
+            })
+
+    # Shuffle the test set order (within blocks are already grouped, shuffle across)
     random.shuffle(test_pairs)
+
+    logger.info(f"\nTest set: {len(sampled_courses)} courses × {len(req_ids_with_prereq)} targets = {len(test_pairs)} pairs")
 
     # Write test set template (CSV for labeling)
     import csv
-    test_csv_path = PROJECT_DIR / "data" / "labels" / "test_set_template.csv"
+    test_csv_path = PROJECT_DIR / "data" / "labels" / "test_set_template_v2.csv"
     test_csv_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = ["sending_institution", "sending_course_code", "sending_course_name",
                   "sending_credits", "requirement_id", "label"]
@@ -100,8 +114,9 @@ def main():
         for pair in test_pairs:
             writer.writerow({**pair, "label": ""})  # label blank for human to fill
 
-    logger.info(f"\nTest set template: {test_csv_path}")
+    logger.info(f"Test set template: {test_csv_path}")
     logger.info(f"  {len(test_pairs)} pairs to label (seed={shuffle_seed})")
+    logger.info(f"  Structure: 100 courses × 6 targets (complete blocks)")
     logger.info(f"  Copy to test_set_pass1.csv and fill the 'label' column (0/1).")
     logger.info(f"Output: {output_path}")
     logger.info("")
@@ -126,6 +141,7 @@ def main():
 
 def _load_unique_courses(catalog_path: Path) -> list[dict]:
     """Load unique courses from the JSONL catalog (deduplicated by institution+code)."""
+    import re
     seen = set()
     courses = []
     with open(catalog_path, "r", encoding="utf-8") as f:
@@ -137,13 +153,39 @@ def _load_unique_courses(catalog_path: Path) -> list[dict]:
                    record.get("sending_course_code", ""))
             if key not in seen:
                 seen.add(key)
+                name = record.get("sending_course_name", "")
+                # Canonicalize: truncate at rendering artifacts
+                name = _canonicalize_name(name)
                 courses.append({
                     "sending_institution": record.get("sending_institution", ""),
                     "sending_course_code": record.get("sending_course_code", ""),
-                    "sending_course_name": record.get("sending_course_name", ""),
+                    "sending_course_name": name,
                     "sending_credits": record.get("sending_credits", ""),
                 })
     return courses
+
+
+def _canonicalize_name(name: str) -> str:
+    """
+    Canonicalize course name by removing rendering artifacts.
+
+    Rule: truncate at the first occurrence of known artifact patterns.
+    These are HTML table concatenation artifacts from the harvester where
+    course notes or subsequent columns were appended to the name field.
+    """
+    import re
+    # Patterns that signal start of concatenation junk
+    artifact_patterns = [
+        r"This course",
+        r"Students may",
+        r"Special Requirement",
+        r"\d+-[A-Z]",  # e.g. "3-Bridgewater" (credits-institution)
+    ]
+    for pattern in artifact_patterns:
+        match = re.search(pattern, name)
+        if match:
+            name = name[:match.start()]
+    return name.strip()
 
 
 if __name__ == "__main__":
