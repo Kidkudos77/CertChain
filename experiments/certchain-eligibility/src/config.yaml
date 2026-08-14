@@ -56,3 +56,17 @@ simulation:
   requirement_coverage_rate:
     sweep: [0.4, 0.6, 0.8, 1.0]
   label: "SIMULATED"
+
+# Labeling protocol
+labeling:
+  total_pairs: 600
+  retest_fraction: 0.40
+  retest_n: 240
+  minimum_gap_days: 7
+  shuffle_seed_pass1: 42
+  shuffle_seed_pass2: 99
+  # Dates filled in by labeler:
+  pass1_dates: []       # e.g. ["2026-08-15", "2026-08-16"]
+  pass2_dates: []       # e.g. ["2026-08-23"]
+  rubric_reviewer: ""   # e.g. "Dr. Chi, circulated 2026-08-14"
+  kappa_threshold: 0.61 # minimum acceptable kappa
