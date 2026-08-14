@@ -17,14 +17,25 @@
 - [ ] 1B.2 **Pass 1:** Label all 600 pairs. Log date of each labeling session.
 - [ ] 1B.3 **Wait ≥ 7 days.**
 - [ ] 1B.4 **Pass 2:** Relabel a random 40% subsample (240 pairs) with a different shuffle seed, without access to Pass 1 answers. Log date.
-- [ ] 1B.5 Compute Cohen's kappa (overall and per requirement) between Pass 1 and Pass 2 on the 240-pair overlap.
-- [ ] 1B.6 Finalize `test_set.csv` from Pass 1. Record labeling dates and gap in manifest.
+- [ ] 1B.5 Compute Cohen's kappa, PABAK, raw agreement, and 2×2 marginals (overall and per requirement) between Pass 1 and Pass 2 on the 240-pair overlap.
+- [ ] 1B.6 **Pass 1 is the final label set for all 600 pairs. Full stop.** Pass 2 exists only to measure reliability. Disagreements are reported as measured noise, never repaired.
 - [ ] 1B.7 (Optional) Obtain partial second-labeler kappa on a 100-pair subsample.
 
 Expected files:
-  - `data/labels/test_set_pass1.csv` — 600 pairs, full first pass
-  - `data/labels/test_set_pass2.csv` — 240 pairs, retest subsample
-  - `data/labels/test_set.csv` — final labels (= Pass 1, adjudicated against rubric)
+  - `data/labels/test_set_pass1.csv` — 600 pairs, full first pass (THIS IS THE FINAL LABEL SET)
+  - `data/labels/test_set_pass2.csv` — 240 pairs, retest subsample (measurement only)
+  - `data/labels/test_set.csv` — copy of Pass 1 (symlink or identical content)
+
+Failure path:
+  - If kappa + PABAK + raw agreement together indicate rubric failure (not just
+    prevalence-driven kappa deflation), BOTH passes are void.
+  - All 600 pairs must be relabeled under the revised rubric from scratch.
+  - Labels from two rubric versions must NEVER be mixed.
+
+Integrity:
+  - Pass 1 file must not be opened or modified during Pass 2 labeling.
+  - compute_kappa.py refuses to write Pass 2 if Pass 1 was modified after its
+    recorded completion timestamp.
 
 ## Phase 2: Cascade and Classifier (BLOCKED on labels)
 
@@ -70,8 +81,18 @@ Expected files:
 - 600 judgments × ~12s = ~2 hours. Split across sittings. Log dates.
 - Retest subsample: 240 pairs × ~12s = ~45 minutes.
 - The 7-day gap prevents recall from round one. Document the actual gap in days.
-- Cohen's kappa reported overall and per requirement (R1–R5).
-- If kappa < 0.61, the rubric needs revision before proceeding.
+- Pass 1 is the final label set. Full stop. No adjudication from retest.
+- Pass 2 measures reliability only. Disagreements are reported as noise, not repaired.
+- Report: raw agreement, Cohen's kappa, PABAK, 2×2 marginals, positive rate per req.
+- Kappa is unstable at low prevalence (~5% positive rate). A rubric is NOT failed
+  on kappa < 0.61 alone. Interpret kappa, PABAK, and raw agreement together.
+  High agreement + low kappa + high prevalence index = prevalence deflation, not
+  rubric failure.
+- FAILURE PATH: If all three metrics (kappa, PABAK, raw agreement) indicate poor
+  consistency, BOTH passes are void. All 600 pairs must be relabeled under a
+  revised rubric from scratch. Labels from two rubric versions are NEVER mixed.
+- compute_kappa.py refuses to write Pass 2 results if Pass 1 was modified after
+  its recorded completion timestamp.
 - Rubric reviewed by thesis advisor (Dr. Chi). Document the review date, or note
   that it was circulated and the deadline passed.
 - Do NOT use an LLM as a second labeler. An LLM may be used as a disagreement

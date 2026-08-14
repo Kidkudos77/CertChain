@@ -1,0 +1,8 @@
+{
+  "requirements_yaml_sha256": "2f38b5d3eadd90a06b59567cc06419e8f07d3945f630bcebc2c0ba27032de14a",
+  "n_unique_courses": 178,
+  "n_requirements": 6,
+  "n_pairs": 1068,
+  "labels_supplied": false,
+  "status": "BLOCKED \u2014 awaiting human labels"
+}

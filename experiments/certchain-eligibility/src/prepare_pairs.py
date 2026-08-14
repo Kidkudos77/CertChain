@@ -63,19 +63,50 @@ def main():
                 # label: NOT SET — awaiting human adjudication
             })
 
-    # Write pairs (without labels)
+    # Write all pairs (unlabeled, for reference)
     output_path = PROJECT_DIR / "data" / "processed" / "pairs_unlabeled.jsonl"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         for pair in pairs:
             f.write(json.dumps(pair, ensure_ascii=False) + "\n")
 
-    logger.info(f"Generated {len(pairs)} course-requirement pairs")
+    logger.info(f"Generated {len(pairs)} total course-requirement pairs")
     logger.info(f"  ({len(courses)} courses × {len(req_ids_with_prereq)} requirements)")
+
+    # Sample 600 pairs for the test set (seeded)
+    import random
+    labeling_cfg = config.get("labeling", {})
+    n_test = labeling_cfg.get("total_pairs", 600)
+    shuffle_seed = labeling_cfg.get("shuffle_seed_pass1", 42)
+    random.seed(shuffle_seed)
+
+    if len(pairs) <= n_test:
+        test_pairs = pairs
+    else:
+        test_pairs = random.sample(pairs, n_test)
+
+    # Shuffle the test set order
+    random.shuffle(test_pairs)
+
+    # Write test set template (CSV for labeling)
+    import csv
+    test_csv_path = PROJECT_DIR / "data" / "labels" / "test_set_template.csv"
+    test_csv_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["sending_institution", "sending_course_code", "sending_course_name",
+                  "sending_credits", "requirement_id", "label"]
+    with open(test_csv_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for pair in test_pairs:
+            writer.writerow({**pair, "label": ""})  # label blank for human to fill
+
+    logger.info(f"\nTest set template: {test_csv_path}")
+    logger.info(f"  {len(test_pairs)} pairs to label (seed={shuffle_seed})")
+    logger.info(f"  Copy to test_set_pass1.csv and fill the 'label' column (0/1).")
     logger.info(f"Output: {output_path}")
     logger.info("")
     logger.info("STOP: Labels must be human-supplied before proceeding to evaluation.")
-    logger.info("Place labeled pairs in data/labels/ as CSV or JSONL with a 'label' column (0/1).")
+    logger.info("Place labeled pairs in data/labels/test_set_pass1.csv.")
 
     # Write manifest stub
     manifest = {
