@@ -1,0 +1,18 @@
+# Virtual environment
+.venv/
+
+# Temporary/scratch files
+data/alive.txt
+data/check.txt
+data/dep_check.txt
+data/install_result.txt
+data/pip_list.txt
+data/test.py
+pip_output.txt
+
+# Scratch analysis scripts (not pipeline code)
+src/_*.py
+
+# Python cache
+__pycache__/
+*.pyc

@@ -44,7 +44,19 @@ def main():
         return
 
     courses = _load_unique_courses(catalog_path)
-    logger.info(f"Unique courses loaded: {len(courses)}")
+
+    # Exclude combined/bundled course entries (contain '/' in the code after dept prefix)
+    # e.g. "CIS 228/244/247" is three courses bundled, not a single course.
+    # Rule: a code with '/' after the numeric portion indicates a combined entry.
+    import re
+    combined = [c for c in courses if re.search(r"\d+/", c["sending_course_code"])]
+    courses = [c for c in courses if not re.search(r"\d+/", c["sending_course_code"])]
+    if combined:
+        logger.info(f"Excluded {len(combined)} combined/bundled course entries:")
+        for c in combined:
+            logger.info(f"  {c['sending_institution']} / {c['sending_course_code']}: {c['sending_course_name']}")
+
+    logger.info(f"Unique courses loaded: {len(courses)} (after dedup and exclusions)")
 
     # Generate all pairs
     req_ids = [r["id"] for r in requirements["requirements"]]
@@ -59,8 +71,8 @@ def main():
                 "sending_course_code": course["sending_course_code"],
                 "sending_course_name": course["sending_course_name"],
                 "sending_credits": course["sending_credits"],
+                "status": course["status"],
                 "requirement_id": req_id,
-                # label: NOT SET — awaiting human adjudication
             })
 
     # Write all pairs (unlabeled, for reference)
@@ -94,6 +106,7 @@ def main():
                 "sending_course_code": course["sending_course_code"],
                 "sending_course_name": course["sending_course_name"],
                 "sending_credits": course["sending_credits"],
+                "status": course["status"],
                 "requirement_id": req_id,
             })
 
@@ -104,10 +117,10 @@ def main():
 
     # Write test set template (CSV for labeling)
     import csv
-    test_csv_path = PROJECT_DIR / "data" / "labels" / "test_set_template_v2.csv"
+    test_csv_path = PROJECT_DIR / "data" / "labels" / "test_set_template.csv"
     test_csv_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = ["sending_institution", "sending_course_code", "sending_course_name",
-                  "sending_credits", "requirement_id", "label"]
+                  "sending_credits", "status", "requirement_id", "label"]
     with open(test_csv_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -140,7 +153,7 @@ def main():
 
 
 def _load_unique_courses(catalog_path: Path) -> list[dict]:
-    """Load unique courses from the JSONL catalog (deduplicated by institution+code)."""
+    """Load unique courses from the JSONL catalog (deduplicated by institution+base_code)."""
     import re
     seen = set()
     courses = []
@@ -149,20 +162,48 @@ def _load_unique_courses(catalog_path: Path) -> list[dict]:
             if not line.strip():
                 continue
             record = json.loads(line)
-            key = (record.get("sending_institution", ""),
-                   record.get("sending_course_code", ""))
+            raw_code = record.get("sending_course_code", "")
+            # Strip status suffixes: #(Replaced: ...), #(Disc'd: ...)
+            base_code, status = _parse_code_status(raw_code)
+            institution = record.get("sending_institution", "")
+            key = (institution, base_code)
             if key not in seen:
                 seen.add(key)
                 name = record.get("sending_course_name", "")
-                # Canonicalize: truncate at rendering artifacts
                 name = _canonicalize_name(name)
                 courses.append({
-                    "sending_institution": record.get("sending_institution", ""),
-                    "sending_course_code": record.get("sending_course_code", ""),
+                    "sending_institution": institution,
+                    "sending_course_code": base_code,
+                    "sending_course_code_raw": raw_code,
                     "sending_course_name": name,
                     "sending_credits": record.get("sending_credits", ""),
+                    "status": status,
                 })
     return courses
+
+
+def _parse_code_status(raw_code: str) -> tuple[str, str]:
+    """
+    Split a course code into base code and status flag.
+
+    Examples:
+      "CIS 110" -> ("CIS 110", "active")
+      "CIS 110#(Replaced: 7/1/2024)" -> ("CIS 110", "replaced")
+      "CIS 225#(Disc'd: 3/16/2026)" -> ("CIS 225", "discontinued")
+    """
+    import re
+    match = re.search(r"#\(", raw_code)
+    if not match:
+        return raw_code.strip(), "active"
+    base = raw_code[:match.start()].strip()
+    suffix = raw_code[match.start():].lower()
+    if "replaced" in suffix:
+        status = "replaced"
+    elif "disc" in suffix:
+        status = "discontinued"
+    else:
+        status = "inactive"
+    return base, status
 
 
 def _canonicalize_name(name: str) -> str:
