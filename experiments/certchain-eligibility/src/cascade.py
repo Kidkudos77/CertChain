@@ -42,6 +42,25 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = SCRIPT_DIR.parent
 
 
+def _parse_credits(value) -> float:
+    """Parse credit values, handling Excel-mangled formats like '4-Jan' (was '1-4')."""
+    import re
+    s = str(value).strip()
+    if not s or s == '0':
+        return 0.0
+    # Direct numeric
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    # Range like "1-4" or Excel-mangled "4-Jan", "4-Mar"
+    # Take the first number found
+    nums = re.findall(r'\d+', s)
+    if nums:
+        return float(max(nums))  # Take the larger value (benefit of the doubt)
+    return 0.0
+
+
 class Cascade:
     """Four-stage cascade resolver."""
 
@@ -95,7 +114,7 @@ class Cascade:
         """
         code = course.get("sending_course_code", "")
         name = course.get("sending_course_name", "")
-        credits = float(course.get("sending_credits", 0) or 0)
+        credits = _parse_credits(course.get("sending_credits", "0"))
         institution = course.get("sending_institution", "")
 
         base_result = {
