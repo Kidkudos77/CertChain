@@ -120,7 +120,16 @@ BERT's target: beat F1 = 0.22. Majority baseline F1 = 0 (finds nothing).
 **Caveat:** 32 positives across 896 pairs means every Stage 3 metric has wide
 confidence intervals. Report the positive count (n=32) alongside each figure.
 R1 and R3 have zero positives in the residual — precision and recall are
-undefined there (not zero, undefined).
+undefined there (not zero — undefined: the denominator is zero, so the metric
+does not exist for those requirements).
+
+**Recall caveat on the triage claim:** 82% volume reduction at 65.6% recall
+means one-third of genuine matches are missed. For credential issuance, a false
+negative is a student wrongly denied. Triage cannot replace review — the
+unflagged remainder must also be checked. The correct framing is
+**prioritization** (which pairs to review first), not **elimination** (which
+pairs are safe to skip). Stage 3 surfaces high-confidence candidates for
+registrar confirmation; it does not make the decision.
 
 ---
 
