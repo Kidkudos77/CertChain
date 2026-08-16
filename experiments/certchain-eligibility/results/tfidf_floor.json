@@ -1,0 +1,14 @@
+{
+  "tfidf_floor_stage3": {
+    "n_pairs": 896,
+    "n_positives": 32,
+    "positive_rate": 0.03571428571428571,
+    "accuracy": 0.8337053571428571,
+    "precision": 0.1320754716981132,
+    "recall": 0.65625,
+    "f1": 0.2198952879581152,
+    "majority_baseline_accuracy": 0.9642857142857143,
+    "lift_over_majority_pct": -13.05803571428572,
+    "method": "TF-IDF(3000 features, 1-2 ngrams) + LogisticRegression(balanced), GroupKFold(3)"
+  }
+}
