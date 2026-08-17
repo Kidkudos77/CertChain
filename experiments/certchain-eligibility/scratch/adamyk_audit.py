@@ -1,16 +1,12 @@
 """
-T2 Anchor Audit: Adamyk et al. DeFi Risk Assessment
+T2 Anchor Audit: Adamyk et al. (2025) DeFi Risk Assessment
+Journal of Risk and Financial Management, 18(1), 38.
 
 Two checks:
 1. Utility recomputation: U = a*exp(-b*epsilon) + c*exp(-d*R)
-   Using their published parameters, recompute utility for each platform
-   and flag any that don't match their reported rankings.
-
 2. Partial eta-squared recheck: eta_p^2 = (df_effect * F) / (df_effect * F + df_error)
-   For each reported F-statistic in their Table 2, compute eta_p^2 and compare
-   against their reported effect sizes.
 
-Source: Adamyk et al. reported parameters and statistics from the published paper.
+Values extracted directly from the published paper (Tables 2 and 3).
 """
 import json
 import numpy as np
@@ -21,120 +17,144 @@ OUTPUT = Path(__file__).resolve().parent.parent / "results" / "adamyk_audit.json
 # ============================================================================
 # 1. UTILITY RECOMPUTATION
 # ============================================================================
-# U = a * exp(-b * epsilon) + c * exp(-d * R)
-# where epsilon = error rate, R = responsiveness
-#
-# Published parameter values from Adamyk et al. (Table 1 / parameter set)
-# These are the values reported in their paper for ranking DeFi platforms.
-#
-# NOTE: If the paper does not publish exact a, b, c, d values per platform,
-# this section documents that gap. Replace with actual values if available.
+# U(epsilon, R) = a * exp(-b * epsilon) + c * exp(-d * R)
+# From Table 3 (page 21):
 
-# Placeholder structure — fill with actual published values from the paper:
-# Format: {"platform": name, "epsilon": error_rate, "R": responsiveness,
-#          "reported_U": their_reported_utility}
 platforms = [
-    # Example structure — replace with Adamyk's actual published data:
-    # {"platform": "Aave", "epsilon": 0.02, "R": 0.85, "a": 1.0, "b": 2.0, "c": 1.0, "d": 1.5, "reported_U": None},
-    # {"platform": "Compound", ...},
-    # {"platform": "Nansen", ...},
+    {"platform": "Chainalysis", "epsilon": 0.05, "R": 3, "a": 0.7, "b": None, "c": 0.3, "d": 1.0, "reported_U": 0.648},
+    {"platform": "Elliptic",    "epsilon": 0.08, "R": 2, "a": 0.6, "b": 2.0,  "c": 0.4, "d": 1.2, "reported_U": 0.547},
+    {"platform": "Nansen",      "epsilon": 0.01, "R": 1, "a": 0.5, "b": 1.5,  "c": 0.5, "d": 1.5, "reported_U": 0.542},
+    {"platform": "Dune Analytics", "epsilon": 0.12, "R": 4, "a": 0.8, "b": 1.8, "c": 0.2, "d": 1.1, "reported_U": 0.647},
+    {"platform": "DeBank",      "epsilon": 0.15, "R": 2, "a": 0.4, "b": 1.2,  "c": 0.6, "d": 1.4, "reported_U": 0.371},
+    {"platform": "Etherscan",   "epsilon": 0.07, "R": 3, "a": 0.6, "b": 1.7,  "c": 0.4, "d": 1.3, "reported_U": 0.541},
 ]
 
-# Parameters for the utility function (from their methods section)
-# If they use a single parameter set:
-# a, b, c, d = (values from paper)
+print("=" * 70)
+print("ADAMYK et al. (2025) AUDIT — UTILITY RECOMPUTATION")
+print("U(epsilon, R) = a * exp(-b * epsilon) + c * exp(-d * R)")
+print("=" * 70)
+print()
 
-print("=" * 60)
-print("ADAMYK et al. AUDIT — UTILITY RECOMPUTATION")
-print("=" * 60)
+utility_results = []
+for p in platforms:
+    if p["b"] is None:
+        print(f"  {p['platform']}: MISSING PARAMETER b in Table 3.")
+        print(f"    Cannot compute utility. This is a reporting defect in the paper.")
+        print(f"    Reported U = {p['reported_U']}")
+        utility_results.append({
+            "platform": p["platform"],
+            "computed_U": None,
+            "reported_U": p["reported_U"],
+            "discrepancy": None,
+            "finding": "Parameter b not reported in Table 3. Utility cannot be verified.",
+        })
+        print()
+        continue
 
-if not platforms:
-    print("\n  STATUS: Parameter values not yet extracted from paper.")
-    print("  Need: a, b, c, d coefficients and per-platform epsilon, R values")
-    print("  from their Table 1 or methods section.")
-    print("  Script structure is ready — fill in values and rerun.")
-else:
-    for p in platforms:
-        computed_U = p["a"] * np.exp(-p["b"] * p["epsilon"]) + p["c"] * np.exp(-p["d"] * p["R"])
-        match = abs(computed_U - p["reported_U"]) < 0.01 if p["reported_U"] else "not reported"
-        print(f"  {p['platform']}: computed U={computed_U:.4f}, reported={p['reported_U']}, match={match}")
+    computed_U = p["a"] * np.exp(-p["b"] * p["epsilon"]) + p["c"] * np.exp(-p["d"] * p["R"])
+    diff = abs(computed_U - p["reported_U"])
+    match = diff < 0.005
+
+    print(f"  {p['platform']}:")
+    print(f"    Parameters: a={p['a']}, b={p['b']}, c={p['c']}, d={p['d']}, eps={p['epsilon']}, R={p['R']}")
+    print(f"    Computed U = {computed_U:.6f}")
+    print(f"    Reported U = {p['reported_U']}")
+    print(f"    Difference = {diff:.6f} -> {'MATCH' if match else 'DISCREPANCY'}")
+    print()
+
+    utility_results.append({
+        "platform": p["platform"],
+        "computed_U": round(float(computed_U), 6),
+        "reported_U": p["reported_U"],
+        "discrepancy": round(float(diff), 6),
+        "match": match,
+    })
 
 # ============================================================================
 # 2. PARTIAL ETA-SQUARED RECHECK
 # ============================================================================
 # eta_p^2 = (df_effect * F) / (df_effect * F + df_error)
-#
-# From their ANOVA / Table 2:
-# They report F-statistics and effect sizes. We recompute eta_p^2 from F and df
-# and check if it matches their reported values.
+# From Table 2 (page 19): N=138, 6 platforms, df_between=5, df_within=132
 
-print("\n" + "=" * 60)
-print("ADAMYK et al. AUDIT — PARTIAL ETA-SQUARED RECHECK")
-print("=" * 60)
+print("=" * 70)
+print("ADAMYK et al. (2025) AUDIT — PARTIAL ETA-SQUARED RECHECK")
+print("eta_p^2 = (df_effect * F) / (df_effect * F + df_error)")
+print("=" * 70)
+print()
 
-# Format: {"variable": name, "F": F_statistic, "df_effect": between-groups df,
-#          "df_error": within-groups df, "reported_eta_p2": their value}
-# From their Table 2 (ANOVA results):
 anova_rows = [
-    # Replace with actual values from their Table 2:
-    # {"variable": "Security Score", "F": 4.23, "df_effect": 5, "df_error": 132, "reported_eta_p2": 0.138},
-    # {"variable": "Responsiveness", "F": 3.87, "df_effect": 5, "df_error": 132, "reported_eta_p2": 0.128},
+    {"criterion": "Data Accuracy",          "F": 12.43, "df_effect": 5, "df_error": 132, "reported_eta_p2": 0.29},
+    {"criterion": "Real-Time Monitoring",   "F": 10.11, "df_effect": 5, "df_error": 132, "reported_eta_p2": 0.22},
+    {"criterion": "Advanced Analytics",     "F": 11.22, "df_effect": 5, "df_error": 132, "reported_eta_p2": 0.23},
+    {"criterion": "Compliance Features",    "F": 14.01, "df_effect": 5, "df_error": 132, "reported_eta_p2": 0.31},
+    {"criterion": "Usability",              "F": 8.71,  "df_effect": 5, "df_error": 132, "reported_eta_p2": 0.17},
+    {"criterion": "Overall Effectiveness",  "F": 11.78, "df_effect": 5, "df_error": 132, "reported_eta_p2": 0.27},
 ]
 
-if not anova_rows:
-    print("\n  STATUS: F-statistics and df values not yet extracted from paper.")
-    print("  Need: F, df_effect, df_error, and reported eta_p^2 from Table 2.")
-    print("  Script structure is ready — fill in values and rerun.")
-    print()
-    print("  Formula: eta_p^2 = (df_effect * F) / (df_effect * F + df_error)")
-    print("  Example: if F=4.23, df_effect=5, df_error=132:")
-    computed_example = (5 * 4.23) / (5 * 4.23 + 132)
-    print(f"           eta_p^2 = (5*4.23)/(5*4.23 + 132) = {computed_example:.4f}")
-else:
-    discrepancies = []
-    for row in anova_rows:
-        computed = (row["df_effect"] * row["F"]) / (row["df_effect"] * row["F"] + row["df_error"])
-        reported = row["reported_eta_p2"]
-        diff = abs(computed - reported)
-        status = "MATCH" if diff < 0.005 else f"DISCREPANCY (diff={diff:.4f})"
-        print(f"  {row['variable']}: F={row['F']}, computed eta_p^2={computed:.4f}, "
-              f"reported={reported:.4f} -> {status}")
-        if diff >= 0.005:
-            discrepancies.append(row["variable"])
+eta_results = []
+discrepancies = []
 
-    if discrepancies:
-        print(f"\n  FINDING: {len(discrepancies)} discrepancies found.")
-        print(f"  Variables: {', '.join(discrepancies)}")
-    else:
-        print(f"\n  All {len(anova_rows)} rows match within tolerance.")
+for row in anova_rows:
+    computed = (row["df_effect"] * row["F"]) / (row["df_effect"] * row["F"] + row["df_error"])
+    reported = row["reported_eta_p2"]
+    diff = abs(computed - reported)
+    match = diff < 0.01  # within 1 percentage point
+
+    status = "MATCH" if match else "DISCREPANCY"
+    if not match:
+        discrepancies.append(row["criterion"])
+
+    print(f"  {row['criterion']}:")
+    print(f"    F={row['F']}, df_effect={row['df_effect']}, df_error={row['df_error']}")
+    print(f"    Computed eta_p^2 = {computed:.4f}")
+    print(f"    Reported eta_p^2 = {reported}")
+    print(f"    Difference = {diff:.4f} -> {status}")
+    print()
+
+    eta_results.append({
+        "criterion": row["criterion"],
+        "F": row["F"],
+        "computed_eta_p2": round(float(computed), 4),
+        "reported_eta_p2": reported,
+        "discrepancy": round(float(diff), 4),
+        "match": match,
+    })
+
+print("=" * 70)
+print("SUMMARY")
+print("=" * 70)
+print(f"  Utility: Chainalysis missing parameter b (cannot verify)")
+n_utility_checked = sum(1 for r in utility_results if r["computed_U"] is not None)
+n_utility_match = sum(1 for r in utility_results if r.get("match") == True)
+print(f"  Utility: {n_utility_match}/{n_utility_checked} platforms match within 0.005")
+print(f"  Eta-squared: {len(discrepancies)} discrepancies out of {len(anova_rows)} rows")
+if discrepancies:
+    print(f"  Discrepant criteria: {', '.join(discrepancies)}")
 
 # ============================================================================
 # SAVE
 # ============================================================================
 result = {
     "adamyk_audit": {
-        "status": "script_ready" if not platforms and not anova_rows else "computed",
+        "paper": "Adamyk et al. (2025). Risk Management in DeFi. JRFM 18(1), 38.",
         "utility_recomputation": {
-            "method": "U = a*exp(-b*epsilon) + c*exp(-d*R)",
-            "platforms_checked": len(platforms),
-            "note": "Parameter extraction from paper pending" if not platforms else "Computed",
+            "formula": "U = a*exp(-b*epsilon) + c*exp(-d*R)",
+            "source": "Table 3, page 21",
+            "findings": utility_results,
+            "missing_parameter": "Chainalysis b value not reported in Table 3",
         },
         "eta_squared_recheck": {
-            "method": "eta_p^2 = (df_effect * F) / (df_effect * F + df_error)",
-            "rows_checked": len(anova_rows),
-            "note": "Value extraction from Table 2 pending" if not anova_rows else "Computed",
+            "formula": "eta_p^2 = (df_effect * F) / (df_effect * F + df_error)",
+            "source": "Table 2, page 19",
+            "N": 138,
+            "findings": eta_results,
+            "n_discrepancies": len(discrepancies),
+            "discrepant_criteria": discrepancies,
         },
-        "finding": (
-            "Script structure complete. Requires manual extraction of parameter values "
-            "and F-statistics from the published paper to produce numerical results. "
-            "The audit methodology is: (1) recompute utility from published parameters "
-            "and flag ranking inconsistencies, (2) recompute eta_p^2 from F and df and "
-            "flag discrepancies with reported effect sizes."
-        ),
     }
 }
 
 OUTPUT.parent.mkdir(exist_ok=True)
 with open(OUTPUT, "w") as f:
-    json.dump(result, f, indent=2)
+    json.dump(result, f, indent=2, default=str)
 print(f"\nSaved to {OUTPUT}")
