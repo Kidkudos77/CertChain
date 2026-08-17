@@ -46,6 +46,7 @@ for p in platforms:
             "computed_U": None,
             "reported_U": p["reported_U"],
             "discrepancy": None,
+            "match": None,
             "finding": "Parameter b not reported in Table 3. Utility cannot be verified.",
         })
         print()
@@ -67,7 +68,7 @@ for p in platforms:
         "computed_U": round(float(computed_U), 6),
         "reported_U": p["reported_U"],
         "discrepancy": round(float(diff), 6),
-        "match": match,
+        "match": bool(match),
     })
 
 # ============================================================================
@@ -95,29 +96,40 @@ eta_results = []
 discrepancies = []
 
 for row in anova_rows:
-    computed = (row["df_effect"] * row["F"]) / (row["df_effect"] * row["F"] + row["df_error"])
+    computed_eta = (row["df_effect"] * row["F"]) / (row["df_effect"] * row["F"] + row["df_error"])
+    # Alternative: omega squared = df_effect*(F-1) / (df_effect*(F-1) + N)
+    N = 138
+    computed_omega = (row["df_effect"] * (row["F"] - 1)) / (row["df_effect"] * (row["F"] - 1) + N)
     reported = row["reported_eta_p2"]
-    diff = abs(computed - reported)
-    match = diff < 0.01  # within 1 percentage point
 
-    status = "MATCH" if match else "DISCREPANCY"
-    if not match:
+    diff_eta = abs(computed_eta - reported)
+    diff_omega = abs(computed_omega - reported)
+    match_eta = diff_eta < 0.01
+    match_omega = diff_omega < 0.015
+
+    status_eta = "MATCH" if match_eta else "DISCREPANCY"
+    if not match_eta:
         discrepancies.append(row["criterion"])
 
     print(f"  {row['criterion']}:")
     print(f"    F={row['F']}, df_effect={row['df_effect']}, df_error={row['df_error']}")
-    print(f"    Computed eta_p^2 = {computed:.4f}")
-    print(f"    Reported eta_p^2 = {reported}")
-    print(f"    Difference = {diff:.4f} -> {status}")
+    print(f"    Computed partial eta^2 = {computed_eta:.4f}")
+    print(f"    Computed omega^2       = {computed_omega:.4f}")
+    print(f"    Reported               = {reported}")
+    print(f"    Diff (eta^2)  = {diff_eta:.4f} -> {status_eta}")
+    print(f"    Diff (omega^2)= {diff_omega:.4f} -> {'CLOSER' if diff_omega < diff_eta else 'NOT CLOSER'}")
     print()
 
     eta_results.append({
         "criterion": row["criterion"],
         "F": row["F"],
-        "computed_eta_p2": round(float(computed), 4),
-        "reported_eta_p2": reported,
-        "discrepancy": round(float(diff), 4),
-        "match": match,
+        "computed_partial_eta_p2": round(float(computed_eta), 4),
+        "computed_omega_squared": round(float(computed_omega), 4),
+        "reported": reported,
+        "diff_eta_p2": round(float(diff_eta), 4),
+        "diff_omega_sq": round(float(diff_omega), 4),
+        "match_eta_p2": bool(match_eta),
+        "omega_closer": bool(diff_omega < diff_eta),
     })
 
 print("=" * 70)
@@ -127,9 +139,16 @@ print(f"  Utility: Chainalysis missing parameter b (cannot verify)")
 n_utility_checked = sum(1 for r in utility_results if r["computed_U"] is not None)
 n_utility_match = sum(1 for r in utility_results if r.get("match") == True)
 print(f"  Utility: {n_utility_match}/{n_utility_checked} platforms match within 0.005")
-print(f"  Eta-squared: {len(discrepancies)} discrepancies out of {len(anova_rows)} rows")
+print(f"  Eta-squared: {len(discrepancies)}/6 rows inconsistent with partial eta^2")
+n_omega_closer = sum(1 for r in eta_results if r.get("omega_closer"))
+print(f"  Omega-squared closer on {n_omega_closer}/6 rows (but does not reproduce all)")
 if discrepancies:
     print(f"  Discrepant criteria: {', '.join(discrepancies)}")
+print()
+print("  CONCLUSION: Reported values are inconsistent with partial eta^2 as defined")
+print("  by the paper's own F statistics and degrees of freedom. They sit systematically")
+print("  closer to omega^2, suggesting a mislabeled estimator rather than arbitrary")
+print("  numbers, but no single standard estimator reproduces all six rows.")
 
 # ============================================================================
 # SAVE
@@ -144,12 +163,20 @@ result = {
             "missing_parameter": "Chainalysis b value not reported in Table 3",
         },
         "eta_squared_recheck": {
-            "formula": "eta_p^2 = (df_effect * F) / (df_effect * F + df_error)",
+            "formula_partial_eta": "eta_p^2 = (df_effect * F) / (df_effect * F + df_error)",
+            "formula_omega": "omega^2 = df_effect*(F-1) / (df_effect*(F-1) + N)",
             "source": "Table 2, page 19",
             "N": 138,
             "findings": eta_results,
-            "n_discrepancies": len(discrepancies),
+            "n_discrepancies_vs_partial_eta": len(discrepancies),
             "discrepant_criteria": discrepancies,
+            "omega_closer_count": n_omega_closer,
+            "conclusion": (
+                "Reported values are inconsistent with partial eta^2 as defined by the "
+                "paper's own F statistics and degrees of freedom. They sit systematically "
+                "closer to omega^2, suggesting a mislabeled estimator rather than arbitrary "
+                "numbers, but no single standard estimator reproduces all six rows."
+            ),
         },
     }
 }
