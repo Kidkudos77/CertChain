@@ -82,6 +82,15 @@ print("ADAMYK et al. (2025) AUDIT — PARTIAL ETA-SQUARED RECHECK")
 print("eta_p^2 = (df_effect * F) / (df_effect * F + df_error)")
 print("=" * 70)
 print()
+print("NOTE ON N: The paper reports N=138 respondents and df(Between)=5,")
+print("df(Within)=132. This implies a between-subjects design where each")
+print("respondent rated one platform (N = 5+132+1 = 138). If instead each")
+print("respondent rated all 6 platforms (repeated measures), the effective")
+print("N would be 138*6 = 828, and omega^2 would use that denominator.")
+print("We assume the between-subjects reading (N=138) because df(Within)=132")
+print("is consistent with 138-6=132, not with a repeated-measures partition.")
+print("If the reader assumes N=828, the omega^2 values will differ.")
+print()
 
 anova_rows = [
     {"criterion": "Data Accuracy",          "F": 12.43, "df_effect": 5, "df_error": 132, "reported_eta_p2": 0.29},
@@ -135,7 +144,28 @@ for row in anova_rows:
 print("=" * 70)
 print("SUMMARY")
 print("=" * 70)
-print(f"  Utility: Chainalysis missing parameter b (cannot verify)")
+
+# Full utility table
+print()
+print("  UTILITY RECOMPUTATION (full table):")
+print(f"  {'Platform':<16} {'Computed U':>11} {'Reported U':>11} {'Diff':>8} {'Status'}")
+print(f"  {'-'*16} {'-'*11} {'-'*11} {'-'*8} {'-'*12}")
+for r in utility_results:
+    if r["computed_U"] is None:
+        print(f"  {r['platform']:<16} {'N/A':>11} {r['reported_U']:>11.3f} {'N/A':>8} missing b")
+    else:
+        status = "MATCH" if r["match"] else "DISCREPANCY"
+        print(f"  {r['platform']:<16} {r['computed_U']:>11.6f} {r['reported_U']:>11.3f} {r['discrepancy']:>8.6f} {status}")
+
+# Full eta/omega table
+print()
+print(f"  ETA-SQUARED RECHECK (N={N}, between-subjects assumption):")
+print(f"  {'Criterion':<24} {'Reported':>8} {'eta_p^2':>8} {'omega^2':>8} {'diff(eta)':>9} {'diff(omega)':>11}")
+print(f"  {'-'*24} {'-'*8} {'-'*8} {'-'*8} {'-'*9} {'-'*11}")
+for r in eta_results:
+    print(f"  {r['criterion']:<24} {r['reported']:>8.2f} {r['computed_partial_eta_p2']:>8.4f} {r['computed_omega_squared']:>8.4f} {r['diff_eta_p2']:>9.4f} {r['diff_omega_sq']:>11.4f}")
+
+print()
 n_utility_checked = sum(1 for r in utility_results if r["computed_U"] is not None)
 n_utility_match = sum(1 for r in utility_results if r.get("match") == True)
 print(f"  Utility: {n_utility_match}/{n_utility_checked} platforms match within 0.005")
