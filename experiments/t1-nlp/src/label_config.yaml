@@ -1,0 +1,126 @@
+# Label Derivation Rules for Course Equivalency Classification
+# ============================================================
+# Rules are evaluated in ORDER — first match wins.
+# Each rule tests fields: credits_transferred, receiving_course_name, receiving_course_code, note.
+# Supported conditions: regex (case-insensitive), equals, is_empty, contains.
+#
+# Classes:
+#   0 = not_transferable
+#   1 = partial_or_elective
+#   2 = direct_equivalent
+
+classes:
+  0: "not_transferable"
+  1: "partial_or_elective"
+  2: "direct_equivalent"
+
+# Rules evaluated top-to-bottom; first match assigns the label.
+rules:
+  # ─── NOT TRANSFERABLE ─────────────────────────────────────────────────
+  - label: 0
+    description: "Credits transferred is explicitly zero"
+    conditions:
+      credits_transferred:
+        equals: "0"
+
+  - label: 0
+    description: "Receiving course name indicates not transferable"
+    conditions:
+      receiving_course_name:
+        regex: "(?i)not\\s+transfer"
+
+  - label: 0
+    description: "Credits transferred is empty AND receiving course name is empty/dash"
+    conditions:
+      credits_transferred:
+        is_empty: true
+      receiving_course_name:
+        regex: "^[-\\s]*$"
+
+  # ─── PARTIAL / ELECTIVE CREDIT ────────────────────────────────────────
+  - label: 1
+    description: "Receiving course name contains 'free elective' or 'general elective'"
+    conditions:
+      receiving_course_name:
+        regex: "(?i)(free|general)\\s+elective"
+
+  - label: 1
+    description: "Receiving course name is purely 'Elective' (no specific course match)"
+    conditions:
+      receiving_course_name:
+        regex: "(?i)^\\s*(computer|cis|it|cs|csc|general|math|science|biology|business)?\\s*elective\\s*$"
+
+  - label: 1
+    description: "Receiving course name contains 'elective' AND receiving course code is empty"
+    conditions:
+      receiving_course_name:
+        regex: "(?i)elective"
+      receiving_course_code:
+        is_empty: true
+
+  - label: 1
+    description: "Receiving course name contains abbreviated 'ELEC' (e.g. IT ELEC, BUSN ELEC)"
+    conditions:
+      receiving_course_name:
+        regex: "(?i)\\bELEC\\b"
+      receiving_course_code:
+        is_empty: true
+
+  - label: 1
+    description: "Receiving course name indicates generic/major credit without specific course"
+    conditions:
+      receiving_course_name:
+        regex: "(?i)(major|general)\\s+(or\\s+general\\s+)?credit"
+      receiving_course_code:
+        is_empty: true
+
+  - label: 1
+    description: "Credits transferred has asterisk (conditional/variable transfer)"
+    conditions:
+      credits_transferred:
+        regex: "\\*"
+
+  - label: 1
+    description: "Credits transferred contains a range (e.g. 3-6, 1-4)"
+    conditions:
+      credits_transferred:
+        regex: "^\\d+-\\d+"
+
+  - label: 1
+    description: "Credits transferred has '+' indicating split credit (e.g. 3+1)"
+    conditions:
+      credits_transferred:
+        regex: "\\+"
+
+  - label: 1
+    description: "Receiving course code is empty but credits > 0 and name mentions 'elective'"
+    conditions:
+      receiving_course_code:
+        is_empty: true
+      receiving_course_name:
+        regex: "(?i)elective"
+
+  - label: 1
+    description: "Note mentions additional elective credit"
+    conditions:
+      note:
+        regex: "(?i)elective\\s+credit"
+
+  # ─── DIRECT EQUIVALENT ────────────────────────────────────────────────
+  - label: 2
+    description: "Has a specific receiving course code and positive credits (default)"
+    conditions:
+      receiving_course_code:
+        is_empty: false
+      credits_transferred:
+        regex: "^[1-9]\\d*$"
+
+  - label: 2
+    description: "Fallback: non-empty receiving course code with any non-zero credits"
+    conditions:
+      receiving_course_code:
+        is_empty: false
+      credits_transferred:
+        regex: "^[1-9]"
+
+# Records matching NO rule are excluded and logged.

@@ -1,0 +1,140 @@
+{
+  "adamyk_audit": {
+    "paper": "Adamyk et al. (2025). Risk Management in DeFi. JRFM 18(1), 38.",
+    "utility_recomputation": {
+      "formula": "U = a*exp(-b*epsilon) + c*exp(-d*R)",
+      "source": "Table 3, page 21",
+      "findings": [
+        {
+          "platform": "Chainalysis",
+          "computed_U": null,
+          "reported_U": 0.648,
+          "discrepancy": null,
+          "match": null,
+          "finding": "Parameter b not reported in Table 3. Utility cannot be verified."
+        },
+        {
+          "platform": "Elliptic",
+          "computed_U": 0.547573,
+          "reported_U": 0.547,
+          "discrepancy": 0.000573,
+          "match": true
+        },
+        {
+          "platform": "Nansen",
+          "computed_U": 0.604121,
+          "reported_U": 0.542,
+          "discrepancy": 0.062121,
+          "match": false
+        },
+        {
+          "platform": "Dune Analytics",
+          "computed_U": 0.647044,
+          "reported_U": 0.647,
+          "discrepancy": 4.4e-05,
+          "match": true
+        },
+        {
+          "platform": "DeBank",
+          "computed_U": 0.370594,
+          "reported_U": 0.371,
+          "discrepancy": 0.000406,
+          "match": true
+        },
+        {
+          "platform": "Etherscan",
+          "computed_U": 0.540781,
+          "reported_U": 0.541,
+          "discrepancy": 0.000219,
+          "match": true
+        }
+      ],
+      "missing_parameter": "Chainalysis b value not reported in Table 3"
+    },
+    "eta_squared_recheck": {
+      "formula_partial_eta": "eta_p^2 = (df_effect * F) / (df_effect * F + df_error)",
+      "formula_omega": "omega^2 = df_effect*(F-1) / (df_effect*(F-1) + N)",
+      "source": "Table 2, page 19",
+      "N": 138,
+      "findings": [
+        {
+          "criterion": "Data Accuracy",
+          "F": 12.43,
+          "computed_partial_eta_p2": 0.3201,
+          "computed_omega_squared": 0.2929,
+          "reported": 0.29,
+          "diff_eta_p2": 0.0301,
+          "diff_omega_sq": 0.0029,
+          "match_eta_p2": false,
+          "omega_closer": true
+        },
+        {
+          "criterion": "Real-Time Monitoring",
+          "F": 10.11,
+          "computed_partial_eta_p2": 0.2769,
+          "computed_omega_squared": 0.2482,
+          "reported": 0.22,
+          "diff_eta_p2": 0.0569,
+          "diff_omega_sq": 0.0282,
+          "match_eta_p2": false,
+          "omega_closer": true
+        },
+        {
+          "criterion": "Advanced Analytics",
+          "F": 11.22,
+          "computed_partial_eta_p2": 0.2982,
+          "computed_omega_squared": 0.2702,
+          "reported": 0.23,
+          "diff_eta_p2": 0.0682,
+          "diff_omega_sq": 0.0402,
+          "match_eta_p2": false,
+          "omega_closer": true
+        },
+        {
+          "criterion": "Compliance Features",
+          "F": 14.01,
+          "computed_partial_eta_p2": 0.3467,
+          "computed_omega_squared": 0.3204,
+          "reported": 0.31,
+          "diff_eta_p2": 0.0367,
+          "diff_omega_sq": 0.0104,
+          "match_eta_p2": false,
+          "omega_closer": true
+        },
+        {
+          "criterion": "Usability",
+          "F": 8.71,
+          "computed_partial_eta_p2": 0.2481,
+          "computed_omega_squared": 0.2184,
+          "reported": 0.17,
+          "diff_eta_p2": 0.0781,
+          "diff_omega_sq": 0.0484,
+          "match_eta_p2": false,
+          "omega_closer": true
+        },
+        {
+          "criterion": "Overall Effectiveness",
+          "F": 11.78,
+          "computed_partial_eta_p2": 0.3085,
+          "computed_omega_squared": 0.2809,
+          "reported": 0.27,
+          "diff_eta_p2": 0.0385,
+          "diff_omega_sq": 0.0109,
+          "match_eta_p2": false,
+          "omega_closer": true
+        }
+      ],
+      "n_discrepancies_vs_partial_eta": 6,
+      "discrepant_criteria": [
+        "Data Accuracy",
+        "Real-Time Monitoring",
+        "Advanced Analytics",
+        "Compliance Features",
+        "Usability",
+        "Overall Effectiveness"
+      ],
+      "omega_closer_count": 6,
+      "conclusion": "Reported values are inconsistent with partial eta^2 as defined by the paper's own F statistics and degrees of freedom. They sit systematically closer to omega^2, suggesting a mislabeled estimator rather than arbitrary numbers, but no single standard estimator reproduces all six rows."
+    }
+  }
+}

@@ -1,0 +1,348 @@
+Misparsed courses (artifact in sending_course_name): 23
+
+==========================================================================================
+  INSTITUTION:        Bristol
+  CODE:               CIS 110
+  NAME (raw):         Basic Computing SkillsThis course is not open to students who have successfully completed or currently enrolled for cred
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Bridgewater'
+  RECEIVING_CODE:     'COMP 105'
+  RECEIVING_NAME:     'Computers and Their Applications: An Introduction'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Basic Computing Skills'
+  TAIL (artifact):    'This course is not open to students who have successfully completed or currently'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Greenfield
+  CODE:               CIS 140
+  NAME (raw):         Computer Applications and ConceptsSpecial Requirement: Students not currently engaged in daily computer use should consi
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Bridgewater'
+  RECEIVING_CODE:     'COMP 105'
+  RECEIVING_NAME:     'Computers and Their Applications: An Introduction'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Computer Applications and Concepts'
+  TAIL (artifact):    'Special Requirement: Students not currently engaged in daily computer use should'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Greenfield
+  CODE:               CIS 151
+  NAME (raw):         Web Site Design and DevelopmentSpecial Requirement: Students not currently engaged in daily computer use should consider
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Berkshire'
+  RECEIVING_CODE:     'CIS 155'
+  RECEIVING_NAME:     'Web Development'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Web Site Design and Development'
+  TAIL (artifact):    'Special Requirement: Students not currently engaged in daily computer use should'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Greenfield
+  CODE:               CIS 151#(Replaced: 9/7/2022)
+  NAME (raw):         Web Site Design and Development ISpecial Requirement: Students not currently engaged in daily computer use should consid
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Berkshire'
+  RECEIVING_CODE:     'CIS 155'
+  RECEIVING_NAME:     'Web Development'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Web Site Design and Development I'
+  TAIL (artifact):    'Special Requirement: Students not currently engaged in daily computer use should'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Greenfield
+  CODE:               CSC 201
+  NAME (raw):         Introduction to Discrete ComputationStudents may receive credit for CSC 201 or CIS 201, but not for both.4DBridgewaterCo
+  SENDING_CREDITS:    '4'
+  GEN_ED:             'D'
+  RECEIVING_INST:     'Bridgewater'
+  RECEIVING_CODE:     ''
+  RECEIVING_NAME:     'Computer Elective'
+  CREDITS_TRANSFERRED:'4'
+  NOTE:               ''
+
+  CLEAN NAME:         'Introduction to Discrete Computation'
+  TAIL (artifact):    'Students may receive credit for CSC 201 or CIS 201, but not for both.4DBridgewat'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Greenfield
+  CODE:               CSC 254
+  NAME (raw):         Data StructuresStudents may receive credit for CSC 254 or CIS 254 but not for both.4DBerkshireCIS 211Data Structures4
+  SENDING_CREDITS:    '4'
+  GEN_ED:             'D'
+  RECEIVING_INST:     'Berkshire'
+  RECEIVING_CODE:     'CIS 211'
+  RECEIVING_NAME:     'Data Structures'
+  CREDITS_TRANSFERRED:'4'
+  NOTE:               ''
+
+  CLEAN NAME:         'Data Structures'
+  TAIL (artifact):    'Students may receive credit for CSC 254 or CIS 254 but not for both.4DBerkshireC'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 118
+  NAME (raw):         Introduction to Full Stack DevelopmentThis course is offered in the Spring.3-BridgewaterComputer Elective3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Bridgewater'
+  RECEIVING_CODE:     ''
+  RECEIVING_NAME:     'Computer Elective'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Introduction to Full Stack Development'
+  TAIL (artifact):    'This course is offered in the Spring.3-BridgewaterComputer Elective3'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 129
+  NAME (raw):         Data Literacy and ManagementThis course is offered in the Fall.3-FitchburgComputer Science Elective3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Fitchburg'
+  RECEIVING_CODE:     ''
+  RECEIVING_NAME:     'Computer Science Elective'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Data Literacy and Management'
+  TAIL (artifact):    'This course is offered in the Fall.3-FitchburgComputer Science Elective3'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 131
+  NAME (raw):         Introduction to LinuxThis course is offered in the Fall.3-BridgewaterComputer Elective4*
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Bridgewater'
+  RECEIVING_CODE:     ''
+  RECEIVING_NAME:     'Computer Elective'
+  CREDITS_TRANSFERRED:'4*'
+  NOTE:               ''
+
+  CLEAN NAME:         'Introduction to Linux'
+  TAIL (artifact):    'This course is offered in the Fall.3-BridgewaterComputer Elective4*'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 136
+  NAME (raw):         Data EthicsThis course is offered in the Spring.3-FitchburgCSC 4100Ethics and Impacts of Computing Solutions3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Fitchburg'
+  RECEIVING_CODE:     'CSC 4100'
+  RECEIVING_NAME:     'Ethics and Impacts of Computing Solutions'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Data Ethics'
+  TAIL (artifact):    'This course is offered in the Spring.3-FitchburgCSC 4100Ethics and Impacts of Co'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 140
+  NAME (raw):         Introduction to NetworkingThis course is offered in the Fall.4-BerkshireCIS 180Introduction to Networks3
+  SENDING_CREDITS:    '4'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Berkshire'
+  RECEIVING_CODE:     'CIS 180'
+  RECEIVING_NAME:     'Introduction to Networks'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Introduction to Networking'
+  TAIL (artifact):    'This course is offered in the Fall.4-BerkshireCIS 180Introduction to Networks3'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 141
+  NAME (raw):         Introduction to Cloud AdministrationThis course is offered in the Spring.3-BridgewaterComputer Elective3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Bridgewater'
+  RECEIVING_CODE:     ''
+  RECEIVING_NAME:     'Computer Elective'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Introduction to Cloud Administration'
+  TAIL (artifact):    'This course is offered in the Spring.3-BridgewaterComputer Elective3'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 152
+  NAME (raw):         Computer Science IIThis course is offered in the Spring.3-FitchburgCSC 1550Computer Science II3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Fitchburg'
+  RECEIVING_CODE:     'CSC 1550'
+  RECEIVING_NAME:     'Computer Science II'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Computer Science II'
+  TAIL (artifact):    'This course is offered in the Spring.3-FitchburgCSC 1550Computer Science II3'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 154
+  NAME (raw):         Introduction to Artificial IntelligenceThis course is offered in the Spring.3-MiddlesexComputer Science Elective3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Middlesex'
+  RECEIVING_CODE:     ''
+  RECEIVING_NAME:     'Computer Science Elective'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Introduction to Artificial Intelligence'
+  TAIL (artifact):    'This course is offered in the Spring.3-MiddlesexComputer Science Elective3'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 155
+  NAME (raw):         Open-Source IntelligenceThis course is offered in the Spring.3-MiddlesexComputer Science Elective3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Middlesex'
+  RECEIVING_CODE:     ''
+  RECEIVING_NAME:     'Computer Science Elective'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Open-Source Intelligence'
+  TAIL (artifact):    'This course is offered in the Spring.3-MiddlesexComputer Science Elective3'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 219
+  NAME (raw):         Principles of Information SecurityThis course is offered in the Spring.3-BridgewaterComputer Elective3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Bridgewater'
+  RECEIVING_CODE:     ''
+  RECEIVING_NAME:     'Computer Elective'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Principles of Information Security'
+  TAIL (artifact):    'This course is offered in the Spring.3-BridgewaterComputer Elective3'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 224
+  NAME (raw):         Beginning PL/SQLThis course is offered in the Spring.3-BridgewaterComputer Elective3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Bridgewater'
+  RECEIVING_CODE:     ''
+  RECEIVING_NAME:     'Computer Elective'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Beginning PL/SQL'
+  TAIL (artifact):    'This course is offered in the Spring.3-BridgewaterComputer Elective3'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 225
+  NAME (raw):         Introduction to Data AnalyticsThis course is offered in the Spring.3-FitchburgDATA 2000Principles of Data Analysis3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Fitchburg'
+  RECEIVING_CODE:     'DATA 2000'
+  RECEIVING_NAME:     'Principles of Data Analysis'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Introduction to Data Analytics'
+  TAIL (artifact):    'This course is offered in the Spring.3-FitchburgDATA 2000Principles of Data Anal'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 250
+  NAME (raw):         Systems ProgrammingThis course is offered in the Fall.3-FitchburgCSC 2560Systems Programming3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Fitchburg'
+  RECEIVING_CODE:     'CSC 2560'
+  RECEIVING_NAME:     'Systems Programming'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Systems Programming'
+  TAIL (artifact):    'This course is offered in the Fall.3-FitchburgCSC 2560Systems Programming3'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 250#(Replaced: )
+  NAME (raw):         Systems ProgrammingThis course is offered in the Fall.3-FitchburgCSC 3700Algorithms and Data Structures3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Fitchburg'
+  RECEIVING_CODE:     'CSC 3700'
+  RECEIVING_NAME:     'Algorithms and Data Structures'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Systems Programming'
+  TAIL (artifact):    'This course is offered in the Fall.3-FitchburgCSC 3700Algorithms and Data Struct'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 252
+  NAME (raw):         Algorithms and Data StructuresThis course is offered in the Spring.3-FitchburgCSC 3700Algorithms and Data Structures3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Fitchburg'
+  RECEIVING_CODE:     'CSC 3700'
+  RECEIVING_NAME:     'Algorithms and Data Structures'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Algorithms and Data Structures'
+  TAIL (artifact):    'This course is offered in the Spring.3-FitchburgCSC 3700Algorithms and Data Stru'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Mount Wachusett
+  CODE:               CIS 253
+  NAME (raw):         Introduction to Penetration TestingThis course is offered in the Spring.3-MiddlesexComputer Science Elective3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Middlesex'
+  RECEIVING_CODE:     ''
+  RECEIVING_NAME:     'Computer Science Elective'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Introduction to Penetration Testing'
+  TAIL (artifact):    'This course is offered in the Spring.3-MiddlesexComputer Science Elective3'
+  --------------------------------------------------------------------------------
+
+  INSTITUTION:        Quinsigamond
+  CODE:               CIS 206
+  NAME (raw):         Management of Data AnalyticsThis course is cross-listed as MGT 206.3-FitchburgComputer Science Elective3
+  SENDING_CREDITS:    '3'
+  GEN_ED:             '-'
+  RECEIVING_INST:     'Fitchburg'
+  RECEIVING_CODE:     ''
+  RECEIVING_NAME:     'Computer Science Elective'
+  CREDITS_TRANSFERRED:'3'
+  NOTE:               ''
+
+  CLEAN NAME:         'Management of Data Analytics'
+  TAIL (artifact):    'This course is cross-listed as MGT 206.3-FitchburgComputer Science Elective3'
+  --------------------------------------------------------------------------------
+

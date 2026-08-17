@@ -1,0 +1,73 @@
+# CertChain Eligibility — Configuration
+# =======================================
+# Single source of truth for all seeds, parameters, and sweep ranges.
+# No bare random calls anywhere.
+
+random_seed: 42
+
+# Paths (relative to experiments/certchain-eligibility/)
+paths:
+  requirements: "src/requirements.yaml"
+  normalization_rules: "src/normalization_rules.yaml"
+  articulations: "src/articulations.csv"
+  course_catalog: "data/raw/equivalencies.jsonl"
+  labels: "data/labels/"
+  results: "results/"
+
+# Classifier training
+training:
+  batch_size: 16
+  epochs: 10
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  max_seq_length: 64
+  patience: 3
+  bert_model_name: "bert-base-uncased"
+
+# Evaluation
+evaluation:
+  cv_folds: 3
+  group_key: ["sending_institution", "sending_course_code"]
+  latency_samples: 50
+
+# Gate parameters (per-requirement Tier C acceptance)
+gate:
+  default_gpa_weight: 0.40
+  default_completion_weight: 0.40
+  default_bert_weight: 0.20
+  default_threshold: 0.70
+  minimum_grade: "C"
+
+# Sensitivity sweep ranges
+sensitivity:
+  bert_weight_range: [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40]
+  threshold_range: [0.60, 0.65, 0.70, 0.75, 0.80]
+
+# Synthetic student portfolio generation (Monte Carlo)
+simulation:
+  n_students: 1000
+  courses_per_student:
+    sweep: [3, 5, 7, 10]
+  gpa_distribution:
+    mean: 3.0
+    std: 0.5
+    min: 2.0
+    max: 4.0
+  requirement_coverage_rate:
+    sweep: [0.4, 0.6, 0.8, 1.0]
+  label: "SIMULATED"
+
+# Labeling protocol
+labeling:
+  design: "Option B — label all 156 courses (936 pairs). No train/test split. Zero-shot method requires no training data. Threshold via leave-one-course-out."
+  total_pairs: 936
+  retest_fraction: 0.40
+  retest_n: 374
+  minimum_gap_days: 7
+  shuffle_seed_pass1: 42
+  shuffle_seed_pass2: 99
+  # Dates filled in by labeler:
+  pass1_dates: []       # e.g. ["2026-08-15", "2026-08-16"]
+  pass2_dates: []       # e.g. ["2026-08-23"]
+  rubric_reviewer: ""   # e.g. "Dr. Chi, circulated 2026-08-14"
+  kappa_threshold: 0.61 # minimum acceptable kappa (interpret with PABAK)

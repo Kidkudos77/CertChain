@@ -1,0 +1,32 @@
+# Harvester configuration for MassTransfer Course Equivalency Database
+# This file controls all harvester behavior. Edit here, not in code.
+
+base_url: "https://www.mass.edu/masstransfer/equivalencies"
+# The main page that hosts the search form
+search_page: "PublicList.asp"
+
+# Rate limiting: seconds to wait between HTTP requests
+delay_seconds: 2.0
+
+# Paths (relative to experiments/t1-nlp/)
+output_path: "data/raw/equivalencies.jsonl"
+checkpoint_path: "data/raw/checkpoint.json"
+manifest_path: "data/raw/manifest.sha256"
+
+# Request settings
+timeout_seconds: 30
+max_retries: 3
+retry_backoff_factor: 2.0
+
+# User-Agent header for polite crawling
+user_agent: "CertChain-T1-NLP-Harvester/1.0 (Academic Research; rate-limited)"
+
+# Include old/discontinued courses in the search
+include_discontinued: true
+
+# Department filter: only harvest this department code across all institutions.
+# Set to "" or "ALL" to harvest everything (warning: very large responses).
+department: "CIS"
+
+# Logging level: DEBUG, INFO, WARNING, ERROR
+log_level: "INFO"

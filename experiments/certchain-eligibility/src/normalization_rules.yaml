@@ -1,0 +1,120 @@
+# Stage 2 Normalization Rules
+# ===========================
+# FROZEN. Written from requirements.yaml ONLY, before inspecting any
+# MassTransfer course titles. Do not tune against evaluation data.
+#
+# Logic: normalize both the candidate course title and the requirement title,
+# then check for equality or containment. Also check credit hours >= required.
+#
+# Normalization pipeline (applied identically to both sides):
+#   1. Lowercase
+#   2. Strip leading/trailing whitespace
+#   3. Remove punctuation: . , : ; ( ) [ ] / \ " '
+#   4. Collapse multiple spaces to single space
+#   5. Remove stop words (defined below)
+#   6. Apply synonym expansion (defined below)
+#   7. Sort remaining tokens alphabetically (bag-of-words comparison)
+#
+# A match occurs when:
+#   normalized(candidate_title) == normalized(requirement_title)
+#   OR normalized(candidate_title) contains all tokens of normalized(requirement_title)
+#   AND candidate_credits >= requirement_credits
+
+# Words removed during normalization (domain stop words)
+stop_words:
+  - "introduction"
+  - "intro"
+  - "to"
+  - "in"
+  - "of"
+  - "and"
+  - "the"
+  - "a"
+  - "an"
+  - "for"
+  - "with"
+  - "i"
+  - "ii"
+  - "iii"
+  - "iv"
+  - "fundamentals"
+  - "principles"
+  - "concepts"
+  - "course"
+  - "advanced"
+  - "basic"
+  - "applied"
+
+# Synonym groups: tokens within a group are treated as equivalent.
+# First token in each group is the canonical form.
+synonyms:
+  - ["security", "cybersecurity", "cyber-security", "infosec", "information-security"]
+  - ["network", "networking", "networks", "net"]
+  - ["database", "databases", "db", "dbms"]
+  - ["management", "mgmt", "mgt"]
+  - ["systems", "system", "sys"]
+  - ["forensics", "forensic"]
+  - ["digital", "computer"]
+  - ["programming", "program", "coding"]
+
+# Pre-computed normalized forms of each requirement title.
+# These are what candidate titles are matched AGAINST.
+# Derived mechanically from requirements.yaml using the rules above.
+#
+# R1: "Digital Forensics"
+#   lowercase: "digital forensics"
+#   remove punct: "digital forensics"
+#   remove stop: "digital forensics" (no stop words present)
+#   synonyms: "computer forensics" → canonical: "digital forensics"
+#   sorted tokens: ["digital", "forensics"]
+#
+# R2: "Introduction to Computer Security"
+#   lowercase: "introduction to computer security"
+#   remove stop: "computer security" (remove "introduction", "to")
+#   synonyms: "computer" → "digital", "security" stays
+#   sorted tokens: ["digital", "security"]
+#
+# R3: "Applied Security"
+#   lowercase: "applied security"
+#   remove stop: "security" (remove "applied")
+#   synonyms: "security" stays
+#   sorted tokens: ["security"]
+#   NOTE: This is extremely broad after normalization. Expected to over-match.
+#         Stage 2 will have high recall / low precision for R3. This is by
+#         design — the rules are frozen and this is a documented finding.
+#
+# R4: "Network Security"
+#   lowercase: "network security"
+#   remove stop: "network security"
+#   synonyms: "network" stays, "security" stays
+#   sorted tokens: ["network", "security"]
+#
+# R5: "Database Management Systems"
+#   lowercase: "database management systems"
+#   remove stop: "database management systems"
+#   synonyms: "database" stays, "management" stays, "systems" stays
+#   sorted tokens: ["database", "management", "systems"]
+#
+# Prerequisite (not in denominator but checked separately):
+# "Fundamentals of Programming"
+#   lowercase: "fundamentals of programming"
+#   remove stop: "programming" (remove "fundamentals", "of")
+#   synonyms: "programming" stays
+#   sorted tokens: ["programming"]
+
+normalized_requirements:
+  R1: ["digital", "forensics"]
+  R2: ["digital", "security"]
+  R3: ["security"]
+  R4: ["network", "security"]
+  R5: ["database", "management", "systems"]
+  prerequisite: ["programming"]
+
+# Credit hour minimums (from requirements.yaml)
+credit_minimums:
+  R1: 3
+  R2: 3
+  R3: 3
+  R4: 3
+  R5: 3
+  prerequisite: 3

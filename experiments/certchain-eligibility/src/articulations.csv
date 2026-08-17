@@ -1,0 +1,7 @@
+# Articulation Table — Stage 0 Lookup
+# =====================================
+# Format: sending_institution,sending_course_code,requirement_id,provenance,date_effective
+# This file is empty. Stage 0 is a production path with no data available
+# for this evaluation. It reports 0% resolution rate.
+# Do not delete this file or this stage.
+sending_institution,sending_course_code,requirement_id,provenance,date_effective

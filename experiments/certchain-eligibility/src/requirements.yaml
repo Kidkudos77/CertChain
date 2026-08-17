@@ -1,0 +1,55 @@
+# FAMU Cyber Defense Certificate — Requirement List
+# ==================================================
+# FROZEN. Do not modify. Hash recorded in results manifest.
+# Source: Florida A&M University, Department of Computer and Information Sciences
+#
+# Gate logic:
+#   eligible = prerequisite_met
+#              AND all 5 requirements matched (conjunctive, not compensable)
+#              AND every matched course has grade >= C
+#
+#   The weighted score (0.40*GPA + 0.40*course_completion + 0.20*BERT_confidence)
+#   applies PER REQUIREMENT at Tier C only, deciding whether a semantically
+#   inferred match is accepted as satisfying that specific requirement.
+#   It does NOT govern overall eligibility.
+#
+#   course_completion counts only Tier A and Tier B satisfied requirements.
+#   BERT_confidence = (1/|R|) * sum_r max_c conf(c, r)
+
+certificate: "Cyber Defense Certificate (Cybersecurity Certificate)"
+institution: "Florida A&M University"
+department: "Computer and Information Sciences"
+total_credit_hours: 15
+minimum_grade_per_course: "C"
+all_requirements_mandatory: true
+
+prerequisite:
+  code: "COP 3014C"
+  name: "Fundamentals of Programming"
+  credit_hours: 3
+  note: >
+    Must be satisfactorily completed prior to starting the program.
+    Precondition only. Not one of the 15 credits. Excluded from
+    course_completion denominator.
+
+requirements:
+  - id: "R1"
+    code: "CIS 4385C"
+    name: "Digital Forensics"
+    credit_hours: 3
+  - id: "R2"
+    code: "CIS 4360"
+    name: "Introduction to Computer Security"
+    credit_hours: 3
+  - id: "R3"
+    code: "CIS 4361"
+    name: "Applied Security"
+    credit_hours: 3
+  - id: "R4"
+    code: "CNT 4406"
+    name: "Network Security"
+    credit_hours: 3
+  - id: "R5"
+    code: "COP 3710"
+    name: "Database Management Systems"
+    credit_hours: 3

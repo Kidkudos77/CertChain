@@ -1,0 +1,9 @@
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Scratch analysis output (scripts tracked, output not)
+scratch/*.txt

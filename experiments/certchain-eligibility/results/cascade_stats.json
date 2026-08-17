@@ -1,0 +1,47 @@
+{
+  "dataset": {
+    "total_pairs": 936,
+    "unique_courses": 156,
+    "positive_rate": 0.06303418803418803,
+    "positives": 59
+  },
+  "cascade": {
+    "total_pairs": 936,
+    "per_stage": {
+      "stage_0": {
+        "count": 0,
+        "rate": 0.0,
+        "latency_mean_ms": 0.00045363254358586017,
+        "latency_std_ms": 0.00011761363582125819
+      },
+      "stage_1": {
+        "count": 0,
+        "rate": 0.0,
+        "latency_mean_ms": 0.0009403845932609282,
+        "latency_std_ms": 0.0003096964440629226
+      },
+      "stage_2": {
+        "count": 40,
+        "rate": 0.042735042735042736,
+        "latency_mean_ms": 0.012932478881323647,
+        "latency_std_ms": 0.005597159676774433
+      },
+      "stage_3": {
+        "count": 896,
+        "rate": 0.9572649572649573,
+        "latency_mean_ms": 0.00018515616570117084,
+        "latency_std_ms": 6.791303886584915e-05
+      },
+      "unresolved": {
+        "count": 0,
+        "rate": 0.0
+      }
+    }
+  },
+  "stage3_residual": {
+    "total": 896,
+    "positives": 32,
+    "positive_rate": 0.03571428571428571
+  },
+  "note": "Partial labeling (subset of full 156-course pool). Intra-rater reliability pending."
+}
